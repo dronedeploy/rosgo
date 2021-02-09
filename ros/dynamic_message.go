@@ -95,6 +95,7 @@ func NewDynamicMessageTypeLiteral(typeName string) (DynamicMessageType, error) {
 	return *t, err
 }
 
+// TODO Update description
 // NewDynamicMessageType generates a DynamicMessageType corresponding to the specified typeName from the available ROS message definitions; typeName should be a fully-qualified
 // ROS message type name.  The first time the function is run, a message 'context' is created by searching through the available ROS message definitions, then the ROS message to
 // be used for the definition is looked up by name.  On subsequent calls, the ROS message type is looked up directly from the existing context.
@@ -195,6 +196,7 @@ func newDynamicMessageTypeNested(typeName string, packageName string, nested map
 	return m, err
 }
 
+// TODO Add description
 func (m *DynamicMessageType) populateFromSpec(spec *libgengo.MsgSpec, nested map[string]*DynamicMessageType, nestedChain map[string]struct{}) error {
 	// Create nested maps if required.
 	if nested == nil || nestedChain == nil {

@@ -105,19 +105,25 @@ func newDynamicActionTypeNested(typeName string, packageName string) (*DynamicAc
 	m.text = spec.Text
 
 	// Create Dynamic Goal Type
-	goalType := &DynamicActionGoalType{}
-	goalType.spec = spec.ActionGoal
-	m.goalType = goalType
+	goalType, err := NewDynamicMessageTypeFromSpec(spec.ActionGoal)
+	if err != nil {
+		return nil, err
+	}
+	m.goalType = &DynamicActionGoalType{*goalType}
 
 	// Create Dynamic Feedback Type
-	feedbackType := &DynamicActionFeedbackType{}
-	feedbackType.spec = spec.ActionFeedback
-	m.feedbackType = feedbackType
+	feedbackType, err := NewDynamicMessageTypeFromSpec(spec.ActionFeedback)
+	if err != nil {
+		return nil, err
+	}
+	m.feedbackType = &DynamicActionFeedbackType{*feedbackType}
 
 	// Create Dynamic Result Type
-	resultType := &DynamicActionResultType{}
-	resultType.spec = spec.ActionResult
-	m.resultType = resultType
+	resultType, err := NewDynamicMessageTypeFromSpec(spec.ActionResult)
+	if err != nil {
+		return nil, err
+	}
+	m.resultType = &DynamicActionResultType{*resultType}
 
 	// We've successfully made a new service type matching the requested ROS type.
 	return m, nil
