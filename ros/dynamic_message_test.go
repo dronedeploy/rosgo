@@ -192,6 +192,7 @@ func TestDynamicMessage_TypeWithRecursion(t *testing.T) {
 		*gengo.NewField("test", "recursiveMessage", "x", true, -1),
 	}
 	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "recursiveMessage"
 	context.RegisterMsg("recursiveMessage", msgSpec)
 
 	_, err = NewDynamicMessageType("recursiveMessage") // If this isn't handled correctly, we get stack overflow.
@@ -214,18 +215,21 @@ func TestDynamicMessage_TypeWithBuriedRecursion(t *testing.T) {
 		*gengo.NewField("test", "yMessage", "y", true, -1),
 	}
 	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "xMessage"
 	context.RegisterMsg("xMessage", msgSpec)
 
 	fields = []gengo.Field{
 		*gengo.NewField("test", "zMessage", "z", true, -1),
 	}
 	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "yMessage"
 	context.RegisterMsg("yMessage", msgSpec)
 
 	fields = []gengo.Field{
 		*gengo.NewField("test", "xMessage", "x", true, -1),
 	}
 	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "zMessage"
 	context.RegisterMsg("zMessage", msgSpec)
 
 	_, err = NewDynamicMessageType("xMessage") // If this isn't handled correctly, we get stack overflow.
@@ -248,6 +252,7 @@ func TestDynamicMessage_RepeatedTypes_ButNoRecursion(t *testing.T) {
 		*gengo.NewField("test", "uint8", "val", true, -1),
 	}
 	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "xMessage"
 	context.RegisterMsg("xMessage", msgSpec)
 
 	fields = []gengo.Field{
@@ -255,6 +260,7 @@ func TestDynamicMessage_RepeatedTypes_ButNoRecursion(t *testing.T) {
 		*gengo.NewField("test", "xMessage", "x2", true, -1),
 	}
 	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "zMessage"
 	context.RegisterMsg("zMessage", msgSpec)
 
 	_, err = NewDynamicMessageType("zMessage")
@@ -277,12 +283,14 @@ func TestDynamicMessage_RepeatedBuriedTypes_ButNoRecursion(t *testing.T) {
 		*gengo.NewField("test", "uint8", "val", true, -1),
 	}
 	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "xMessage"
 	context.RegisterMsg("xMessage", msgSpec)
 
 	fields = []gengo.Field{
 		*gengo.NewField("test", "xMessage", "x", true, -1),
 	}
 	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "yMessage"
 	context.RegisterMsg("yMessage", msgSpec)
 
 	fields = []gengo.Field{
@@ -290,6 +298,7 @@ func TestDynamicMessage_RepeatedBuriedTypes_ButNoRecursion(t *testing.T) {
 		*gengo.NewField("test", "yMessage", "y", true, -1),
 	}
 	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "zMessage"
 	context.RegisterMsg("zMessage", msgSpec)
 
 	_, err = NewDynamicMessageType("zMessage")
@@ -636,6 +645,28 @@ func TestDynamicMessage_getNestedTypeFromField_basic(t *testing.T) {
 	}
 	if _, ok := nestedType.nested["found"]; ok == false {
 		t.Fatalf("look up returned the incorrect nested type")
+	}
+}
+
+func TestDynamicMessage_DynamicType_FromSpec(t *testing.T) {
+	fields := []gengo.Field{
+		*gengo.NewField("Testing", "float32", "x", false, 0),
+	}
+	spec := generateTestSpec(fields)
+
+	msgType, err := NewDynamicMessageTypeFromSpec(spec)
+	if err != nil {
+		t.Fatal("could not create dynamic type from spec")
+	}
+	if msgType.spec.FullName != spec.FullName {
+		t.Fatal("type name mismatch")
+	}
+}
+
+func TestDynamicMessage_DynamicType_FromSpec_BadSpec(t *testing.T) {
+	_, err := NewDynamicMessageTypeFromSpec(nil)
+	if err == nil {
+		t.Fatal("expected nil spec to throw an error")
 	}
 }
 

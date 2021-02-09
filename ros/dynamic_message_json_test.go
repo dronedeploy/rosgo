@@ -733,12 +733,14 @@ func TestDynamicMessage_marshalJSON_arrayOfNestedMessages(t *testing.T) {
 		*gengo.NewField("test", "uint8", "val", false, 0),
 	}
 	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "test/x0Message"
 	context.RegisterMsg("test/x0Message", msgSpec)
 
 	fields = []gengo.Field{
 		*gengo.NewField("test", "x0Message", "x", true, 2),
 	}
 	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "test/z0Message"
 	context.RegisterMsg("test/z0Message", msgSpec)
 
 	testMessageType, err := NewDynamicMessageType("test/z0Message")
