@@ -153,8 +153,8 @@ func (ctx *PkgContext) LoadMsgFromString(text string, fullname string) (*MsgSpec
 		return nil, e
 	}
 
-	var fields []Field
-	var constants []Constant
+	fields := make([]Field, 0)
+	constants := make([]Constant, 0)
 	for lineno, origLine := range strings.Split(text, "\n") {
 		cleanLine := stripComment(origLine)
 		if len(cleanLine) == 0 {
