@@ -12,40 +12,27 @@ func TestDynamicService_ServiceType_Load(t *testing.T) {
 		return
 	}
 
-	requestType, ok := serviceType.reqType.(*DynamicMessageType)
+	checkIfValidDynamicMessageType(t, serviceType.reqType, "request")
+	checkIfValidDynamicMessageType(t, serviceType.resType, "response")
+}
+
+// Helper classes
+func checkIfValidDynamicMessageType(t *testing.T, msgType MessageType, name string) {
+	dynMsgType, ok := msgType.(*DynamicMessageType)
 
 	if !ok {
-		t.Fatalf("expected request type to be dynamic message type")
+		t.Fatalf("expected %s to be dynamic message type", name)
 	}
 
-	if requestType.nested == nil {
-		t.Fatalf("request type nested is nil!")
+	if dynMsgType.nested == nil {
+		t.Fatalf("%s type nested is nil!", name)
 	}
 
-	if requestType.spec == nil {
-		t.Fatalf("request type spec is nil!")
+	if dynMsgType.spec == nil {
+		t.Fatalf("%s type spec is nil!", name)
 	}
 
-	if requestType.spec.Fields == nil {
-		t.Fatalf("request type Fields is nil!")
+	if dynMsgType.spec.Fields == nil {
+		t.Fatalf("%s type Fields is nil!", name)
 	}
-
-	responseType, ok := serviceType.resType.(*DynamicMessageType)
-
-	if !ok {
-		t.Fatalf("expected response type to be dynamic message type")
-	}
-
-	if responseType.nested == nil {
-		t.Fatalf("response type nested is nil!")
-	}
-
-	if responseType.spec == nil {
-		t.Fatalf("response type spec is nil!")
-	}
-
-	if responseType.spec.Fields == nil {
-		t.Fatalf("response type Fields is nil!")
-	}
-
 }
