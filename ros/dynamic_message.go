@@ -95,20 +95,43 @@ func NewDynamicMessageTypeLiteral(typeName string) (DynamicMessageType, error) {
 	return *t, err
 }
 
+// NewDynamicMessageTypeFromSpec creates a DynamicMessageType using a preloaded message specification.
+// When loading a service or action, multiple message specs are loaded at once, so `NewDynamicMessageType` is not applicable.
+func NewDynamicMessageTypeFromSpec(spec *libgengo.MsgSpec) (*DynamicMessageType, error) {
+	if spec == nil {
+		return nil, errors.New("spec is empty")
+	}
+	// Create an empty message type.
+	t := &DynamicMessageType{}
+
+	// Create nested map and self-register.
+	t.nested = make(map[string]*DynamicMessageType)
+	t.nested[spec.FullName] = t
+
+	// Create the nested chain for detecting message recursion and self-register.
+	nestedChain := make(map[string]struct{})
+	nestedChain[spec.FullName] = struct{}{}
+
+	// Populate the DynamicMessageType data from spec.
+	err := t.populateFromSpec(spec, nestedChain)
+
+	return t, err
+}
+
 // newDynamicMessageTypeNested generates a DynamicMessageType from the available ROS message definitions.  The first time the function is run, a message 'context' is created by
 // searching through the available ROS message definitions, then the ROS message type to use for the defintion is looked up by name.  On subsequent calls, the ROS message type
 // is looked up directly from the existing context.  This 'nested' version of the function is able to be called recursively, where packageName should be the typeName of the
 // parent ROS message; this is used internally for handling complex ROS messages.
 func newDynamicMessageTypeNested(typeName string, packageName string, nested map[string]*DynamicMessageType, nestedChain map[string]struct{}) (*DynamicMessageType, error) {
 	// Create an empty message type.
-	m := &DynamicMessageType{}
+	t := &DynamicMessageType{}
 
 	// If we haven't created a message context yet, better do that.
 	if context == nil {
 		// Create context for our ROS install.
 		c, err := libgengo.NewPkgContext(strings.Split(GetRuntimePackagePath(), ":"))
 		if err != nil {
-			return m, err
+			return t, err
 		}
 		context = c
 	}
@@ -146,8 +169,8 @@ func newDynamicMessageTypeNested(typeName string, packageName string, nested map
 	}
 
 	// Just return with the messageType if it has been defined already
-	if t, ok := nested[fullname]; ok {
-		return t, nil
+	if tRegistered, ok := nested[fullname]; ok {
+		return tRegistered, nil
 	}
 
 	nestedChain[fullname] = struct{}{}
@@ -155,34 +178,46 @@ func newDynamicMessageTypeNested(typeName string, packageName string, nested map
 	// Load context for the target message.
 	spec, err := context.LoadMsg(fullname)
 	if err != nil {
-		return m, err
+		return t, err
 	}
 
-	// Now we know all about the message!
-	m.spec = spec
+	nested[spec.FullName] = t
+	t.nested = nested
 
-	// Just come up with a dumb guess for preallocation. This will get set better on the first call.
-	m.jsonPrealloc = 3 + len(spec.Fields)*3
-
-	// Register type in the nested map, this prevents recursion.
-	nested[fullname] = m
-	m.nested = nested
-
-	// Generate the spec for any nested messages.
-	for _, field := range spec.Fields {
-		if field.IsBuiltin == false {
-			_, err := newDynamicMessageTypeNested(field.Type, field.Package, nested, nestedChain)
-			if err != nil {
-				return m, err
-			}
-		}
-	}
+	// Unravelling the nested chain, we are done.
+	err = t.populateFromSpec(spec, nestedChain)
 
 	// Unravelling the nested chain, we are done.
 	delete(nestedChain, fullname)
 
 	// We've successfully made a new message type matching the requested ROS type.
-	return m, nil
+	return t, err
+}
+
+// populateFromSpec takes a message spec and fills a DynamicMessageType fields. Expects that we have a valid nested chain map.
+func (t *DynamicMessageType) populateFromSpec(spec *libgengo.MsgSpec, nestedChain map[string]struct{}) error {
+	// Create nested maps if required.
+	if t.nested == nil || nestedChain == nil {
+		return errors.New("nested maps were not populated")
+	}
+
+	// Now we know all about the message!
+	t.spec = spec
+
+	// Just come up with a dumb guess for preallocation. This will get set better on the first call.
+	t.jsonPrealloc = 3 + len(spec.Fields)*3
+
+	// Generate the spec for any nested messages.
+	for _, field := range spec.Fields {
+		if field.IsBuiltin == false {
+			_, err := newDynamicMessageTypeNested(field.Type, field.Package, t.nested, nestedChain)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // DEFINE PUBLIC RECEIVER FUNCTIONS.

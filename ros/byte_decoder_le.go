@@ -51,6 +51,10 @@ func (d LEByteDecoder) DecodeUint8Array(buf *bytes.Reader, size int) ([]uint8, e
 	var err error
 	var n int
 	slice := make([]uint8, size)
+	if size == 0 {
+		// Early return to avoid potentail EOF error.
+		return slice, nil
+	}
 	n, err = buf.Read(slice)
 	if n != size || err != nil {
 		return slice, errors.New("Did not read entire uint8 buffer")

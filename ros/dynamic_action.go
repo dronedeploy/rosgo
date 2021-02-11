@@ -105,19 +105,25 @@ func newDynamicActionTypeNested(typeName string, packageName string) (*DynamicAc
 	m.text = spec.Text
 
 	// Create Dynamic Goal Type
-	goalType := &DynamicActionGoalType{}
-	goalType.spec = spec.ActionGoal
-	m.goalType = goalType
+	goalType, err := NewDynamicMessageTypeFromSpec(spec.ActionGoal)
+	if err != nil {
+		return nil, err
+	}
+	m.goalType = &DynamicActionGoalType{*goalType}
 
 	// Create Dynamic Feedback Type
-	feedbackType := &DynamicActionFeedbackType{}
-	feedbackType.spec = spec.ActionFeedback
-	m.feedbackType = feedbackType
+	feedbackType, err := NewDynamicMessageTypeFromSpec(spec.ActionFeedback)
+	if err != nil {
+		return nil, err
+	}
+	m.feedbackType = &DynamicActionFeedbackType{*feedbackType}
 
 	// Create Dynamic Result Type
-	resultType := &DynamicActionResultType{}
-	resultType.spec = spec.ActionResult
-	m.resultType = resultType
+	resultType, err := NewDynamicMessageTypeFromSpec(spec.ActionResult)
+	if err != nil {
+		return nil, err
+	}
+	m.resultType = &DynamicActionResultType{*resultType}
 
 	// We've successfully made a new service type matching the requested ROS type.
 	return m, nil
@@ -170,21 +176,29 @@ func (a *DynamicActionStatusArrayType) NewStatusArrayMessage() ActionStatusArray
 func (a *DynamicActionStatusArrayType) NewStatusArrayFromInterface(statusArr interface{}) ActionStatusArray {
 	statusArray := statusArr.(*DynamicMessage)
 	status := a.NewStatusArrayMessage().(*DynamicActionStatusArray)
-	statusMsgs := statusArray.Data()["status_list"].([]Message)
 	statusList := make([]ActionStatus, 0)
-	for _, statusMsg := range statusMsgs {
-		buildStatus := NewActionStatusType().NewStatusMessage()
-		goalidMsg := statusMsg.(*DynamicMessage).Data()["goal_id"].(*DynamicMessage)
-		goalID := NewActionGoalIDType().NewGoalIDMessage().(*DynamicActionGoalID)
-		goalID.SetID(goalidMsg.Data()["id"].(string))
-		goalID.SetStamp(goalidMsg.Data()["stamp"].(Time))
-		buildStatus.SetGoalID(goalID)
-		buildStatus.SetStatus(statusMsg.(*DynamicMessage).Data()["status"].(uint8))
-		buildStatus.SetStatusText(statusMsg.(*DynamicMessage).Data()["text"].(string))
-		statusList = append(statusList, buildStatus)
+
+	if statusMsgsInterface, ok := statusArray.Data()["status_list"]; ok {
+		if statusMsgs, ok := statusMsgsInterface.([]Message); ok {
+			for _, statusMsg := range statusMsgs {
+				buildStatus := NewActionStatusType().NewStatusMessage()
+				goalidMsg := statusMsg.(*DynamicMessage).Data()["goal_id"].(*DynamicMessage)
+				goalID := NewActionGoalIDType().NewGoalIDMessage().(*DynamicActionGoalID)
+				goalID.SetID(goalidMsg.Data()["id"].(string))
+				goalID.SetStamp(goalidMsg.Data()["stamp"].(Time))
+				buildStatus.SetGoalID(goalID)
+				buildStatus.SetStatus(statusMsg.(*DynamicMessage).Data()["status"].(uint8))
+				buildStatus.SetStatusText(statusMsg.(*DynamicMessage).Data()["text"].(string))
+				statusList = append(statusList, buildStatus)
+			}
+		}
 	}
 	status.SetStatusArray(statusList)
-	status.SetHeader(statusArray.Data()["header"].(Message))
+	if statusHeaderInterface, ok := statusArray.Data()["header"]; ok {
+		if statusHeader, ok := statusHeaderInterface.(Message); ok {
+			status.SetHeader(statusHeader)
+		}
+	}
 	return status
 }
 
