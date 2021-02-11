@@ -176,21 +176,29 @@ func (a *DynamicActionStatusArrayType) NewStatusArrayMessage() ActionStatusArray
 func (a *DynamicActionStatusArrayType) NewStatusArrayFromInterface(statusArr interface{}) ActionStatusArray {
 	statusArray := statusArr.(*DynamicMessage)
 	status := a.NewStatusArrayMessage().(*DynamicActionStatusArray)
-	statusMsgs := statusArray.Data()["status_list"].([]Message)
 	statusList := make([]ActionStatus, 0)
-	for _, statusMsg := range statusMsgs {
-		buildStatus := NewActionStatusType().NewStatusMessage()
-		goalidMsg := statusMsg.(*DynamicMessage).Data()["goal_id"].(*DynamicMessage)
-		goalID := NewActionGoalIDType().NewGoalIDMessage().(*DynamicActionGoalID)
-		goalID.SetID(goalidMsg.Data()["id"].(string))
-		goalID.SetStamp(goalidMsg.Data()["stamp"].(Time))
-		buildStatus.SetGoalID(goalID)
-		buildStatus.SetStatus(statusMsg.(*DynamicMessage).Data()["status"].(uint8))
-		buildStatus.SetStatusText(statusMsg.(*DynamicMessage).Data()["text"].(string))
-		statusList = append(statusList, buildStatus)
+
+	if statusMsgsInterface, ok := statusArray.Data()["status_list"]; ok {
+		if statusMsgs, ok := statusMsgsInterface.([]Message); ok {
+			for _, statusMsg := range statusMsgs {
+				buildStatus := NewActionStatusType().NewStatusMessage()
+				goalidMsg := statusMsg.(*DynamicMessage).Data()["goal_id"].(*DynamicMessage)
+				goalID := NewActionGoalIDType().NewGoalIDMessage().(*DynamicActionGoalID)
+				goalID.SetID(goalidMsg.Data()["id"].(string))
+				goalID.SetStamp(goalidMsg.Data()["stamp"].(Time))
+				buildStatus.SetGoalID(goalID)
+				buildStatus.SetStatus(statusMsg.(*DynamicMessage).Data()["status"].(uint8))
+				buildStatus.SetStatusText(statusMsg.(*DynamicMessage).Data()["text"].(string))
+				statusList = append(statusList, buildStatus)
+			}
+		}
 	}
 	status.SetStatusArray(statusList)
-	status.SetHeader(statusArray.Data()["header"].(Message))
+	if statusHeaderInterface, ok := statusArray.Data()["header"]; ok {
+		if statusHeader, ok := statusHeaderInterface.(Message); ok {
+			status.SetHeader(statusHeader)
+		}
+	}
 	return status
 }
 
