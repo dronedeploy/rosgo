@@ -582,6 +582,122 @@ func TestDynamicMessage_Deserialize_DynamicArrayMedley(t *testing.T) {
 	}
 }
 
+func TestDynamicMessage_Deserialize_EmptyDynamicArrays(t *testing.T) {
+	// Dynamic array type used for testing across all ROS primitives. Note: negative array sizes => dynamic arrays.
+	fields := []gengo.Field{
+		*gengo.NewField("Testing", "uint8", "u8", true, -1),
+		*gengo.NewField("Testing", "uint16", "u16", true, -1),
+		*gengo.NewField("Testing", "uint32", "u32", true, -1),
+		*gengo.NewField("Testing", "uint64", "u64", true, -1),
+		*gengo.NewField("Testing", "int8", "i8", true, -1),
+		*gengo.NewField("Testing", "int16", "i16", true, -1),
+		*gengo.NewField("Testing", "int32", "i32", true, -1),
+		*gengo.NewField("Testing", "int64", "i64", true, -1),
+		*gengo.NewField("Testing", "bool", "b", true, -1),
+		*gengo.NewField("Testing", "float32", "f32", true, -1),
+		*gengo.NewField("Testing", "float64", "f64", true, -1),
+		*gengo.NewField("Testing", "string", "s", true, -1),
+		*gengo.NewField("Testing", "time", "t", true, -1),
+		*gengo.NewField("Testing", "duration", "d", true, -1),
+	}
+	testMessageType := DynamicMessageType{
+		spec:         generateTestSpec(fields),
+		nested:       make(map[string]*DynamicMessageType),
+		jsonPrealloc: 0,
+	}
+
+	var expected = map[string]interface{}{
+		"u8":  []uint8{},
+		"u16": []uint16{},
+		"u32": []uint32{},
+		"u64": []uint64{},
+		"i8":  []int8{},
+		"i16": []int16{},
+		"i32": []int32{},
+		"i64": []int64{},
+		"b":   []bool{},
+		"f32": []JsonFloat32{},
+		"f64": []JsonFloat64{},
+		"s":   []string{},
+		"t":   []Time{},
+		"d":   []Duration{},
+	}
+
+	byteReader := bytes.NewReader([]byte{
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size u8.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size u16.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size u32.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size u64.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size i8.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size i16.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size i32.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size i64.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size b.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size f32.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size f64.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size s.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size t.
+		0x00, 0x00, 0x00, 0x00, // Dynamic array size d.
+	})
+
+	testMessage := testMessageType.NewDynamicMessage()
+
+	if err := testMessage.Deserialize(byteReader); err != nil {
+		t.Fatalf("deserialize failed %s", err)
+	}
+
+	// Test our resulting data
+	for key := range expected {
+		value, ok := testMessage.data[key]
+		if !ok {
+			t.Fatalf("failed to deserialize %s, got %s", key, testMessage.data)
+		}
+
+		expectedValue := expected[key]
+		if fmt.Sprint(expectedValue) != fmt.Sprint(value) {
+			t.Fatalf("%s: expected %d(0x%x) != result %d(0x%x)", key, expectedValue, expectedValue, value, value)
+		}
+	}
+}
+
+func TestDynamicMessage_Deserialize_EmptyString(t *testing.T) {
+	fields := []gengo.Field{
+		*gengo.NewField("Testing", "string", "s", false, 0),
+	}
+	testMessageType := DynamicMessageType{
+		spec:         generateTestSpec(fields),
+		nested:       make(map[string]*DynamicMessageType),
+		jsonPrealloc: 0,
+	}
+
+	var expected = map[string]interface{}{
+		"s": "",
+	}
+
+	byteReader := bytes.NewReader([]byte{
+		0x00, 0x00, 0x00, 0x00, // String size for s.
+	})
+
+	testMessage := testMessageType.NewDynamicMessage()
+
+	if err := testMessage.Deserialize(byteReader); err != nil {
+		t.Fatalf("deserialize failed %s", err)
+	}
+
+	// Test our resulting data
+	for key := range expected {
+		value, ok := testMessage.data[key]
+		if !ok {
+			t.Fatalf("failed to deserialize %s, got %s", key, testMessage.data)
+		}
+
+		expectedValue := expected[key]
+		if fmt.Sprint(expectedValue) != fmt.Sprint(value) {
+			t.Fatalf("%s: expected %d(0x%x) != result %d(0x%x)", key, expectedValue, expectedValue, value, value)
+		}
+	}
+}
+
 // Don't panic when the dynamic type is empty - just do nothing instead.
 func TestDynamicMessage_EmptyType_NoPanic(t *testing.T) {
 	testMessageType := DynamicMessageType{}
