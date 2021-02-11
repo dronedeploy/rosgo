@@ -403,7 +403,7 @@ func setupServiceServerAndClient(t *testing.T) (net.Listener, net.Conn, *default
 	rootLogger := modular.NewRootLogger(logrus.New())
 
 	logger := rootLogger.GetModuleLogger()
-	logger.SetLevel(logrus.DebugLevel)
+	logger.SetLevel(logrus.WarnLevel)
 
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
