@@ -357,9 +357,9 @@ func marshalFloat(f float64, buf *[]byte, bits int) {
 }
 
 func marshalSecNSec(sec uint64, nsec uint64, buf *[]byte) {
-	*buf = append(*buf, []byte("{\"Sec\":")...)
+	*buf = append(*buf, []byte("{\"sec\":")...)
 	*buf = strconv.AppendUint(*buf, sec, 10)
-	*buf = append(*buf, []byte(",\"NSec\":")...)
+	*buf = append(*buf, []byte(",\"nsec\":")...)
 	*buf = strconv.AppendUint(*buf, nsec, 10)
 	*buf = append(*buf, byte('}'))
 }
@@ -692,16 +692,16 @@ func unmarshalSecNSecObject(marshalled []byte) (sec uint32, nsec uint32, err err
 	hasSec := false
 	hasNSec := false
 
-	// Expects the object to be {"Sec":n,"NSec":n} (although, order doesn't matter).
+	// Expects the object to be {"sec":n,"nsec":n} (although, order doesn't matter).
 	err = jsonparser.ObjectEach(marshalled, func(k []byte, v []byte, dataType jsonparser.ValueType, offset int) error {
 		var err error
 		switch string(k) {
-		case "Sec":
+		case "sec":
 			tempSec, err = jsonparser.ParseInt(v)
 			if err == nil {
 				hasSec = true
 			}
-		case "NSec":
+		case "nsec":
 			tempNSec, err = jsonparser.ParseInt(v)
 			if err == nil {
 				hasNSec = true

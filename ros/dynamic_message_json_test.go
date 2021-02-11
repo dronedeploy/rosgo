@@ -145,12 +145,12 @@ func TestDynamicMessage_JSON_primitives(t *testing.T) {
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", false, 0)},
 			data:       map[string]interface{}{"t": NewTime(0xfeedf00d, 0x1337beef)},
-			marshalled: `{"t":{"Sec":4277006349,"NSec":322420463}}`,
+			marshalled: `{"t":{"sec":4277006349,"nsec":322420463}}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, 0)},
 			data:       map[string]interface{}{"d": NewDuration(0x40302010, 0x00706050)},
-			marshalled: `{"d":{"Sec":1076895760,"NSec":7364688}}`,
+			marshalled: `{"d":{"sec":1076895760,"nsec":7364688}}`,
 		},
 		// Fixed and Dynamic arrays.
 		// - Unsigned integers.
@@ -282,23 +282,23 @@ func TestDynamicMessage_JSON_primitives(t *testing.T) {
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", true, 2)},
 			data:       map[string]interface{}{"t": []Time{NewTime(0xfeedf00d, 0x1337beef), NewTime(0x1337beef, 0x00706050)}},
-			marshalled: `{"t":[{"Sec":4277006349,"NSec":322420463},{"Sec":322420463,"NSec":7364688}]}`,
+			marshalled: `{"t":[{"sec":4277006349,"nsec":322420463},{"sec":322420463,"nsec":7364688}]}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", true, -1)}, // Dynamic.
 			data:       map[string]interface{}{"t": []Time{NewTime(0xfeedf00d, 0x1337beef), NewTime(0x1337beef, 0x00706050)}},
-			marshalled: `{"t":[{"Sec":4277006349,"NSec":322420463},{"Sec":322420463,"NSec":7364688}]}`,
+			marshalled: `{"t":[{"sec":4277006349,"nsec":322420463},{"sec":322420463,"nsec":7364688}]}`,
 		},
 		// - Duration.
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, 2)},
 			data:       map[string]interface{}{"d": []Duration{NewDuration(0xfeedf00d, 0x1337beef), NewDuration(0x1337beef, 0x00706050)}},
-			marshalled: `{"d":[{"Sec":4277006349,"NSec":322420463},{"Sec":322420463,"NSec":7364688}]}`,
+			marshalled: `{"d":[{"sec":4277006349,"nsec":322420463},{"sec":322420463,"nsec":7364688}]}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, -1)}, // Dynamic.
 			data:       map[string]interface{}{"d": []Duration{NewDuration(0xfeedf00d, 0x1337beef), NewDuration(0x1337beef, 0x00706050)}},
-			marshalled: `{"d":[{"Sec":4277006349,"NSec":322420463},{"Sec":322420463,"NSec":7364688}]}`,
+			marshalled: `{"d":[{"sec":4277006349,"nsec":322420463},{"sec":322420463,"nsec":7364688}]}`,
 		},
 	}
 
@@ -968,7 +968,7 @@ func TestDynamicMessage_JSONUnmarshal_errors(t *testing.T) {
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "uint64", "u64", false, 0)},
-			marshalled: `{"u64":{"Sec":0,"NSec":1}}`,
+			marshalled: `{"u64":{"sec":0,"nsec":1}}`,
 		},
 		// - Signed integers.
 		{
@@ -1081,11 +1081,11 @@ func TestDynamicMessage_JSONUnmarshal_errors(t *testing.T) {
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", false, 0)},
-			marshalled: `{"t":{"NSec":1}}`,
+			marshalled: `{"t":{"nsec":1}}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", false, 0)},
-			marshalled: `{"t":{"Sec":1}}`,
+			marshalled: `{"t":{"sec":1}}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", false, 0)},
@@ -1093,11 +1093,11 @@ func TestDynamicMessage_JSONUnmarshal_errors(t *testing.T) {
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, 0)},
-			marshalled: `{"d":{"Sec":true,"NSec":true}}`,
+			marshalled: `{"d":{"sec":true,"nsec":true}}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, 0)},
-			marshalled: `{"d":[{"Sec":"","NSec":""}]}`,
+			marshalled: `{"d":[{"sec":"","nsec":""}]}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, 0)},
@@ -1248,37 +1248,37 @@ func TestDynamicMessage_JSONUnmarshal_errors(t *testing.T) {
 		// - Time.
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", true, 2)},
-			marshalled: `{"t":[{"Sec":322420463,"NSec":7364688}]}`, // Wrong length.
+			marshalled: `{"t":[{"sec":322420463,"nsec":7364688}]}`, // Wrong length.
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", true, 1)},
-			marshalled: `{"t":{"Sec":322420463,"NSec":7364688}}`,
+			marshalled: `{"t":{"sec":322420463,"nsec":7364688}}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "t", true, 1)},
-			marshalled: `{"t":[{"Sec":"zero","NSec":7364688}]}`,
+			marshalled: `{"t":[{"sec":"zero","nsec":7364688}]}`,
 		},
 		// - Duration.
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, 2)},
-			marshalled: `{"d":[{"Sec":322420463,"NSec":7364688}]}`, // Wrong length.
+			marshalled: `{"d":[{"sec":322420463,"nsec":7364688}]}`, // Wrong length.
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, 2)},
-			marshalled: `{"d":{"Sec":322420463,"NSec":7364688}}`,
+			marshalled: `{"d":{"sec":322420463,"nsec":7364688}}`,
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, 2)},
-			marshalled: `{"d":[{"Sec":"zero","NSec":7364688}]}`,
+			marshalled: `{"d":[{"sec":"zero","nsec":7364688}]}`,
 		},
 		// Other errors.
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, 1)},
-			marshalled: `{"t":[{"Sec":0,"NSec":7364688}]}`, // Key not found.
+			marshalled: `{"t":[{"sec":0,"nsec":7364688}]}`, // Key not found.
 		},
 		{
 			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", true, 1)},
-			marshalled: `{"d":[{"Sec":0,"NSec":7364688}],"t":[{"Sec":0,"NSec":7364688}]}`, // Unknown key.
+			marshalled: `{"d":[{"sec":0,"nsec":7364688}],"t":[{"sec":0,"nsec":7364688}]}`, // Unknown key.
 		},
 	}
 
