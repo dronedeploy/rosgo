@@ -1,7 +1,9 @@
 package ros
 
 import (
+	"bytes"
 	goContext "context"
+	"encoding/binary"
 	"io"
 	"net"
 	"os"
@@ -23,17 +25,18 @@ func newFakeContext() *fakeContext {
 }
 
 // Helper for cleanup in a test.
-func (ctx *fakeContext) close(t *testing.T, d time.Duration) {
-	select {
-	case <-time.After(d):
-		t.Fatalf("context did not close on receiver side")
-	case ctx.done <- struct{}{}:
-	}
+func (ctx *fakeContext) cancel(t *testing.T, d time.Duration) {
+	close(ctx.done)
 }
 
 // Helper for cleanup in a test.
 func (ctx *fakeContext) cleanUp() {
-	close(ctx.done)
+	select {
+	case <-ctx.done:
+		// Already closed!
+	default:
+		close(ctx.done)
+	}
 }
 
 // Implementing the Context interface
@@ -137,13 +140,21 @@ func Test_readTCPRosMessage_successfulCases(t *testing.T) {
 		bytes    []byte
 		expected []byte
 	}{
-		{ // Zero data case
+		{ // Zero data case.
 			[]byte{0x00, 0x00, 0x00, 0x00},
 			[]byte{},
 		},
-		{ // Has data case
-			[]byte{0x02, 0x00, 0x00, 0x00, 'a', 'b'},
-			[]byte{'a', 'b'},
+		{ // Has data case.
+			[]byte{0x01, 0x00, 0x00, 0x00, 'a'},
+			[]byte{'a'},
+		},
+		{ // More data case.
+			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
+			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
+		},
+		{ // Only read up to the length assigned
+			[]byte{0x04, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 0x00, 0x00},
+			[]byte{'a', 'b', 'c', 'd'},
 		},
 	}
 
@@ -155,10 +166,17 @@ func Test_readTCPRosMessage_successfulCases(t *testing.T) {
 		conn.readBytes = testCase.bytes
 		go readTCPRosMessage(ctx, conn, resultChan)
 
+		expectedRemainderLength := (len(testCase.bytes) - (4 + len(testCase.expected)))
+
+		iter := 0
+
 		for {
 			<-time.After(time.Millisecond)
-			if len(conn.readBytes) == 0 {
+			if len(conn.readBytes) == expectedRemainderLength {
 				break
+			}
+			if iter++; iter > 1000 {
+				t.Fatal("failed to read all the correct number of bytes")
 			}
 		}
 
@@ -186,11 +204,11 @@ func Test_readTCPRosMessage_whenCancelled_isSilent(t *testing.T) {
 
 	go readTCPRosMessage(ctx, conn, resultChan)
 
-	ctx.close(t, time.Second)
+	ctx.cancel(t, time.Second)
 
 	select {
-	case <-resultChan:
-		t.Fatal("expected cancelled read to close silently")
+	case result := <-resultChan:
+		t.Fatalf("expected cancelled read to close silently, got buf: %v err: %v", result.Buf, result.Err)
 	case <-time.After(200 * time.Millisecond):
 	}
 	ctx.cleanUp()
@@ -218,7 +236,7 @@ func Test_readTCPRosMessage_whenTimeoutErrorDuringSize_returnsError(t *testing.T
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
 	conn := newFakeConn()
-	conn.readBytes = []byte{0x00, 0x00, 0x00} // One read short of getting size
+	conn.readBytes = []byte{0x00, 0x00, 0x00} // One read short of getting size.
 	go readTCPRosMessage(ctx, conn, resultChan)
 
 	for {
@@ -236,6 +254,67 @@ func Test_readTCPRosMessage_whenTimeoutErrorDuringSize_returnsError(t *testing.T
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatalf("expected to receive conn error")
+	}
+	ctx.cleanUp()
+}
+
+func Test_readTCPRosMessage_whenTimeoutErrorDuringData_returnsError(t *testing.T) {
+	resultChan := make(chan TCPRosReadResult)
+	ctx := newFakeContext()
+	conn := newFakeConn()
+	conn.readBytes = []byte{0x02, 0x00, 0x00, 0x00, 0x01} // One read short of getting data.
+	go readTCPRosMessage(ctx, conn, resultChan)
+
+	for {
+		<-time.After(time.Millisecond)
+		if len(conn.readBytes) == 0 {
+			break
+		}
+	}
+	conn.readErr = os.ErrDeadlineExceeded
+
+	select {
+	case result := <-resultChan:
+		if result.Err != os.ErrDeadlineExceeded {
+			t.Fatalf("unexepected error %v", result.Err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected to receive timeout error")
+	}
+	ctx.cleanUp()
+}
+
+func Test_readTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
+	resultChan := make(chan TCPRosReadResult)
+	ctx := newFakeContext()
+	conn := newFakeConn()
+	writer := bytes.NewBuffer(make([]byte, 0, 4))
+	// Write the maximum size.
+	size := uint32(maximumTCPRosMessageSize)
+	if err := binary.Write(writer, binary.LittleEndian, &size); err != nil {
+		t.Fatalf("could not write size %v", err)
+	}
+	conn.readBytes = writer.Bytes()
+	go readTCPRosMessage(ctx, conn, resultChan)
+
+	for {
+		<-time.After(time.Millisecond)
+		if len(conn.readBytes) == 0 {
+			break
+		}
+	}
+
+	select {
+	case result := <-resultChan:
+		if err, ok := result.Err.(*TCPRosError); ok {
+			if *err != TCPRosErrorSizeTooLarge {
+				t.Fatalf("unexepected error %v", result.Err)
+			}
+		} else {
+			t.Fatalf("unexepected error %v", result.Err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected to receive size error")
 	}
 	ctx.cleanUp()
 }

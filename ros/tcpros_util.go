@@ -6,6 +6,27 @@ import (
 	"net"
 )
 
+// Technically, this value isn't specified in the ROS framework. However, packets above 10 MB take a lot of effort to handle.
+const maximumTCPRosMessageSize uint32 = 250_000_000
+
+// TCPRosError defines custom error types returned by readTCPRosMessage and writeTCPRosMessage. Not all errors returned will be TCPRosErrors.
+type TCPRosError int
+
+// All TCPRosError types.
+const (
+	TCPRosErrorSizeTooLarge TCPRosError = iota
+)
+
+func (err *TCPRosError) Error() string {
+	switch *err {
+	case TCPRosErrorSizeTooLarge:
+		return "message size is too large"
+	default:
+		return "unknown TCPRosError"
+	}
+}
+
+// TCPRosReadResult defines a structure which is delivered via a channel when calling the asynchronous readTCPRosMessage.
 type TCPRosReadResult struct {
 	Buf []byte
 	Err error
@@ -14,23 +35,18 @@ type TCPRosReadResult struct {
 var decoder ByteDecoder = &LEByteDecoder{}
 
 func readTCPRosSize(ctx goContext.Context, conn net.Conn) (uint32, error) {
-	buf := make([]byte, 4) // TODO: leverage off readTCPRosData to remove duplication
-	index := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return 0, nil
-		default:
-			n, err := conn.Read(buf[index:])
-			if err != nil {
-				return 0, err
-			}
-			index += n
-			if index >= len(buf) {
-				return decoder.DecodeUint32(bytes.NewReader(buf))
-			}
-		}
+	buf, err := readTCPRosData(ctx, conn, 4)
+	if err != nil {
+		return 0, err
 	}
+
+	select {
+	case <-ctx.Done():
+		return 0, nil
+	default:
+		return decoder.DecodeUint32(bytes.NewReader(buf))
+	}
+
 }
 
 func readTCPRosData(ctx goContext.Context, conn net.Conn, size uint32) ([]byte, error) {
@@ -70,7 +86,12 @@ func readTCPRosMessage(ctx goContext.Context, conn net.Conn, resultChan chan TCP
 		return
 	}
 
-	// TODO: Error if size is too large
+	if size >= maximumTCPRosMessageSize {
+		tcpRosErr := TCPRosError(TCPRosErrorSizeTooLarge)
+		resultChan <- TCPRosReadResult{nil, &tcpRosErr}
+		return
+	}
+
 	data, err := readTCPRosData(ctx, conn, size)
 	select {
 	case <-ctx.Done():
