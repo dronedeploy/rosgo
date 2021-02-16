@@ -114,11 +114,9 @@ func (c *fakeConn) Read(b []byte) (n int, err error) {
 	return n, c.readErr
 }
 
-func (c *fakeConn) Write(b []byte) (n int, err error) {
-	nWrite := intMin(c.writeN, len(b))
-	var appendBytes []byte
-	n = copy(appendBytes, b[:nWrite])
-	c.writeBytes = append(c.writeBytes, appendBytes...)
+func (c *fakeConn) Write(b []byte) (int, error) {
+	n := intMin(c.writeN, len(b))
+	c.writeBytes = append(c.writeBytes, b[:n]...)
 
 	return n, c.readErr
 }
@@ -134,6 +132,8 @@ var _ net.Conn = &fakeConn{}
 var _ io.Reader = &fakeConn{}
 
 // Tests start here.
+
+// TODO: Drip feed test cases, only allow the reader to read one byte at a time.
 
 func Test_readTCPRosMessage_successfulCases(t *testing.T) {
 	testCases := []struct {
@@ -176,7 +176,7 @@ func Test_readTCPRosMessage_successfulCases(t *testing.T) {
 				break
 			}
 			if iter++; iter > 1000 {
-				t.Fatal("failed to read all the correct number of bytes")
+				t.Fatalf("[%d]: failed to read the correct number of bytes", i)
 			}
 		}
 
@@ -315,6 +315,62 @@ func Test_readTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatalf("expected to receive size error")
+	}
+	ctx.cleanUp()
+}
+
+// Write Message Tests
+
+func Test_writeTCPRosMessage_successfulCases(t *testing.T) {
+	testCases := []struct {
+		message  []byte
+		expected []byte
+	}{
+		{ // Zero data case.
+			[]byte{},
+			[]byte{0x00, 0x00, 0x00, 0x00},
+		},
+		{ // Has data case.
+			[]byte{'a'},
+			[]byte{0x01, 0x00, 0x00, 0x00, 'a'},
+		},
+		{ // More data case.
+			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
+			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
+		},
+	}
+
+	resultChan := make(chan error)
+	ctx := newFakeContext()
+
+	for i, testCase := range testCases {
+		conn := newFakeConn()
+		conn.writeN = 1000 // Allow writing all at once
+		go writeTCPRosMessage(ctx, conn, testCase.message, resultChan)
+
+		iter := 0
+
+		for {
+			<-time.After(time.Millisecond)
+			if len(conn.writeBytes) == len(testCase.expected) {
+				break
+			}
+			if iter++; iter > 1000 {
+				t.Fatalf("[%d]: failed to write the correct number of bytes", i)
+			}
+		}
+
+		select {
+		case err := <-resultChan:
+			if err != nil {
+				t.Fatalf("[%d]: unexepected error %v", i, err)
+			}
+			if string(conn.writeBytes) != string(testCase.expected) {
+				t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, conn.writeBytes, testCase.expected)
+			}
+		case <-time.After(200 * time.Millisecond):
+			t.Fatalf("[%d]: expected to receive result", i)
+		}
 	}
 	ctx.cleanUp()
 }

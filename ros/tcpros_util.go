@@ -3,6 +3,7 @@ package ros
 import (
 	"bytes"
 	goContext "context"
+	"encoding/binary"
 	"net"
 )
 
@@ -61,6 +62,7 @@ func readTCPRosData(ctx goContext.Context, conn net.Conn, size uint32) ([]byte, 
 			if err != nil {
 				return nil, err
 			}
+			// TODO: Condition is still here...  need to extend time when err is not timeout
 			index += n
 			if index >= len(buf) {
 				return buf, nil
@@ -105,4 +107,35 @@ func readTCPRosMessage(ctx goContext.Context, conn net.Conn, resultChan chan TCP
 	}
 
 	resultChan <- TCPRosReadResult{data, nil}
+}
+
+func writeTCPRosMessage(ctx goContext.Context, conn net.Conn, msgBuf []byte, resultChan chan error) {
+	buff := bytes.NewBuffer(make([]byte, 0, 4))
+	binary.Write(buff, binary.LittleEndian, uint32(len(msgBuf)))
+	index := 0
+Loop:
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			n, err := conn.Write(buff.Bytes()[index:])
+			if err != nil {
+				resultChan <- err
+				return
+			}
+			// TODO: Condition is still here...  need to extend time when err is not timeout
+			index += n
+			if index >= 4 {
+
+				break Loop
+			}
+		}
+	}
+
+	_, err := conn.Write(msgBuf)
+	if err != nil {
+		return
+	}
+	resultChan <- nil
 }
