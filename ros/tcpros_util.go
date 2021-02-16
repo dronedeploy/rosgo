@@ -5,10 +5,13 @@ import (
 	goContext "context"
 	"encoding/binary"
 	"net"
+	"time"
 )
 
 // Technically, this value isn't specified in the ROS framework. However, packets above 10 MB take a lot of effort to handle.
 const maximumTCPRosMessageSize uint32 = 250_000_000
+
+const tcpRosReadTimeout time.Duration = 100 * time.Millisecond
 
 // TCPRosError defines custom error types returned by readTCPRosMessage and writeTCPRosMessage. Not all errors returned will be TCPRosErrors.
 type TCPRosError int
@@ -34,42 +37,6 @@ type TCPRosReadResult struct {
 }
 
 var decoder ByteDecoder = &LEByteDecoder{}
-
-func readTCPRosSize(ctx goContext.Context, conn net.Conn) (uint32, error) {
-	buf, err := readTCPRosData(ctx, conn, 4)
-	if err != nil {
-		return 0, err
-	}
-
-	select {
-	case <-ctx.Done():
-		return 0, nil
-	default:
-		return decoder.DecodeUint32(bytes.NewReader(buf))
-	}
-
-}
-
-func readTCPRosData(ctx goContext.Context, conn net.Conn, size uint32) ([]byte, error) {
-	buf := make([]byte, int(size))
-	index := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, nil
-		default:
-			n, err := conn.Read(buf[index:])
-			if err != nil {
-				return nil, err
-			}
-			// TODO: Condition is still here...  need to extend time when err is not timeout
-			index += n
-			if index >= len(buf) {
-				return buf, nil
-			}
-		}
-	}
-}
 
 // readTcpRosMessage is a rosgo library utility for performing common reads of ros messages from a connection.
 // it should always be called as a go routine, and will return an error on the result channel when it returns.
@@ -110,32 +77,84 @@ func readTCPRosMessage(ctx goContext.Context, conn net.Conn, resultChan chan TCP
 }
 
 func writeTCPRosMessage(ctx goContext.Context, conn net.Conn, msgBuf []byte, resultChan chan error) {
-	buff := bytes.NewBuffer(make([]byte, 0, 4))
-	binary.Write(buff, binary.LittleEndian, uint32(len(msgBuf)))
-	index := 0
-Loop:
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			n, err := conn.Write(buff.Bytes()[index:])
-			if err != nil {
-				resultChan <- err
-				return
-			}
-			// TODO: Condition is still here...  need to extend time when err is not timeout
-			index += n
-			if index >= 4 {
 
-				break Loop
-			}
-		}
+	err := writeTCPRosSize(ctx, conn, uint32(len(msgBuf)))
+
+	select {
+	case <-ctx.Done():
+		return
+	default:
 	}
 
-	_, err := conn.Write(msgBuf)
+	if err != nil {
+		resultChan <- err
+	}
+
+	_, err = conn.Write(msgBuf)
 	if err != nil {
 		return
 	}
 	resultChan <- nil
+}
+
+// Local helper functions
+
+func readTCPRosSize(ctx goContext.Context, conn net.Conn) (uint32, error) {
+	buf, err := readTCPRosData(ctx, conn, 4)
+	if err != nil {
+		return 0, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return 0, nil
+	default:
+		return decoder.DecodeUint32(bytes.NewReader(buf))
+	}
+
+}
+
+func readTCPRosData(ctx goContext.Context, conn net.Conn, size uint32) ([]byte, error) {
+	buf := make([]byte, int(size))
+	index := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, nil
+		default:
+			if index >= len(buf) {
+				return buf, nil
+			}
+
+			conn.SetReadDeadline(time.Now().Add(tcpRosReadTimeout))
+			n, err := conn.Read(buf[index:])
+			if err != nil {
+				return nil, err
+			}
+			index += n
+		}
+	}
+}
+
+func writeTCPRosSize(ctx goContext.Context, conn net.Conn, size uint32) error {
+	buff := bytes.NewBuffer(make([]byte, 0, 4))
+	binary.Write(buff, binary.LittleEndian, size)
+	index := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			n, err := conn.Write(buff.Bytes()[index:])
+			if err != nil {
+				return err
+			}
+			// TODO: Condition is still here...  need to extend time when err is not timeout
+			index += n
+			if index >= 4 {
+				return nil
+			}
+		}
+	}
 }
