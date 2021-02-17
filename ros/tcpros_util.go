@@ -99,32 +99,42 @@ func writeTCPRosMessage(ctx goContext.Context, conn net.Conn, msgBuf []byte, res
 
 // Local helper functions
 
+func isTimeoutError(err error) bool {
+	neterr, ok := err.(net.Error)
+	return (ok && neterr.Timeout())
+}
+
 func readTCPRosSize(ctx goContext.Context, conn net.Conn) (uint32, error) {
-	buf, err := readTCPRosData(ctx, conn, 4)
-	if err != nil {
-		return 0, err
-	}
+	buf := make([]byte, 4)
+	index := 0
+	for index < len(buf) {
+		select {
+		case <-ctx.Done():
+			return 0, nil
+		default:
 
-	select {
-	case <-ctx.Done():
-		return 0, nil
-	default:
-		return decoder.DecodeUint32(bytes.NewReader(buf))
+			conn.SetReadDeadline(time.Now().Add(tcpRosReadTimeout))
+			n, err := conn.Read(buf[index:])
+			if err != nil {
+				// Timeouts are expected between messages, so just keep going. However a timeout during (not at the start of) a size read is considered an error.
+				if isTimeoutError(err) == false || index != 0 {
+					return 0, err
+				}
+			}
+			index += n
+		}
 	}
-
+	return decoder.DecodeUint32(bytes.NewReader(buf))
 }
 
 func readTCPRosData(ctx goContext.Context, conn net.Conn, size uint32) ([]byte, error) {
 	buf := make([]byte, int(size))
 	index := 0
-	for {
+	for index < len(buf) {
 		select {
 		case <-ctx.Done():
 			return nil, nil
 		default:
-			if index >= len(buf) {
-				return buf, nil
-			}
 
 			conn.SetReadDeadline(time.Now().Add(tcpRosReadTimeout))
 			n, err := conn.Read(buf[index:])
@@ -134,6 +144,7 @@ func readTCPRosData(ctx goContext.Context, conn net.Conn, size uint32) ([]byte, 
 			index += n
 		}
 	}
+	return buf, nil
 }
 
 func writeTCPRosSize(ctx goContext.Context, conn net.Conn, size uint32) error {

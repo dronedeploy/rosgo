@@ -156,7 +156,8 @@ var _ io.Reader = &fakeConn{}
 
 // Tests start here.
 
-// TODO: Drip feed test cases, only allow the reader to read one byte at a time.
+// Tolerance for checking timing on reads. The results of these checks are not deterministic because we don't mock time yet.
+const fuzzyTimeTolerance time.Duration = 100 * time.Millisecond
 
 func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 
@@ -172,7 +173,7 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
 			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
 		},
-		{ // Only read up to the length assigned
+		{ // Only read up to the length assigned.
 			[]byte{0x04, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 0x00, 0x00},
 			[]byte{'a', 'b', 'c', 'd'},
 		},
@@ -180,6 +181,7 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 
 	for i, testCase := range testCases {
 		conn := newFakeConn()
@@ -194,20 +196,23 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 			if request != 4 {
 				t.Fatalf("[%d]: expected to request 4 length bytes, got %d", i, request)
 			}
+
+			// Verify the deadline was set appropriately.
+			fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+			if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+				t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+			}
+			conn.readDeadline = time.Time{}
+
 			conn.readResponse <- fakeConnReadResponse{
 				Buf: testCase.bytes[:4],
 				Err: nil,
 			}
-			// Verify the deadline was set appropriately.
-			fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
-			if fuzzyDelta > 10*time.Millisecond || fuzzyDelta < -10*time.Millisecond {
-				t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
-			}
+
 		case <-time.After(time.Second):
 			t.Fatalf("[%d]: expected read request", i)
 		}
 
-		conn.readDeadline = time.Time{}
 		fuzzyDeadline = time.Now().Add(tcpRosReadTimeout)
 
 		select {
@@ -215,15 +220,18 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 			if request != len(testCase.expected) {
 				t.Fatalf("[%d]: expected to request %d length bytes, got %d", i, len(testCase.expected), request)
 			}
+
+			// Verify the deadline was set appropriately.
+			fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+			if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+				t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+			}
+
 			conn.readResponse <- fakeConnReadResponse{
 				Buf: testCase.bytes[4:],
 				Err: nil,
 			}
-			// Verify the deadline was set appropriately.
-			fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
-			if fuzzyDelta > 10*time.Millisecond || fuzzyDelta < -10*time.Millisecond {
-				t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
-			}
+
 		case <-time.After(time.Second):
 			t.Fatalf("[%d]: expected read request", i)
 		}
@@ -238,17 +246,124 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 			} else if string(result.Buf) != string(testCase.expected) {
 				t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, result.Buf, testCase.expected)
 			}
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(time.Second):
 			t.Fatalf("[%d]: expected to receive result", i)
 		}
 	}
-	ctx.cleanUp()
+}
+
+func TestReadTCPRosMessage_successfulCasesDripFed(t *testing.T) {
+
+	testCases := []struct {
+		bytes    []byte
+		expected []byte
+	}{
+		{ // Has data case.
+			[]byte{0x01, 0x00, 0x00, 0x00, 'a'},
+			[]byte{'a'},
+		},
+		{ // More data case.
+			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
+			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
+		},
+		{ // Only read up to the length assigned.
+			[]byte{0x04, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 0x00, 0x00},
+			[]byte{'a', 'b', 'c', 'd'},
+		},
+		{ // Big array.
+			append([]byte{0xe8, 0x03, 0x00, 0x00, 'a', 'b', 'c', 'd'}, make([]byte, 996)...),
+			append([]byte{'a', 'b', 'c', 'd'}, make([]byte, 996)...),
+		},
+	}
+
+	resultChan := make(chan TCPRosReadResult)
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+
+	for i, testCase := range testCases {
+		conn := newFakeConn()
+
+		go readTCPRosMessage(ctx, conn, resultChan)
+
+		conn.readDeadline = time.Time{}
+		fuzzyDeadline := time.Now().Add(tcpRosReadTimeout)
+
+		index := 0
+
+		for index < 4 {
+			select {
+			case request := <-conn.readRequest:
+				expectedN := 4 - index
+				if request != expectedN {
+					t.Fatalf("[%d]: expected to request %d length bytes, got %d", i, expectedN, request)
+				}
+				// Verify the deadline was set appropriately.
+				fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+				if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+					t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+				}
+				// Reset the deadlines for the next read.
+				conn.readDeadline = time.Time{}
+
+				conn.readResponse <- fakeConnReadResponse{
+					Buf: testCase.bytes[index : index+1],
+					Err: nil,
+				}
+				index++
+				fuzzyDeadline = time.Now().Add(tcpRosReadTimeout)
+			case <-time.After(time.Second):
+				t.Fatalf("[%d]: expected read request", i)
+			}
+		}
+
+		for index < len(testCase.expected)+4 {
+			select {
+			case request := <-conn.readRequest:
+				expectedN := len(testCase.expected) - (index - 4)
+				if request != expectedN {
+					t.Fatalf("[%d]: expected to request %d length bytes, got %d", i, expectedN, request)
+				}
+				// Verify the deadline was set appropriately.
+				fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+				if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+					t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+				}
+				// Reset the deadlines for the next read.
+				conn.readDeadline = time.Time{}
+
+				conn.readResponse <- fakeConnReadResponse{
+					Buf: testCase.bytes[index : index+1],
+					Err: nil,
+				}
+				index++
+				fuzzyDeadline = time.Now().Add(tcpRosReadTimeout)
+
+			case <-time.After(time.Second):
+				t.Fatalf("[%d]: expected read request", i)
+			}
+		}
+
+		select {
+		case result := <-resultChan:
+			if result.Err != nil {
+				t.Fatalf("[%d]: unexpected error %v", i, result.Err)
+			}
+			if result.Buf == nil {
+				t.Fatalf("[%d]: result buffer is nil", i)
+			} else if string(result.Buf) != string(testCase.expected) {
+				t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, result.Buf, testCase.expected)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("[%d]: expected to receive result", i)
+		}
+	}
 }
 
 func TestReadTCPRosMessage_emptyMessage(t *testing.T) {
 
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 
 	conn := newFakeConn()
 
@@ -262,14 +377,15 @@ func TestReadTCPRosMessage_emptyMessage(t *testing.T) {
 		if request != 4 {
 			t.Fatalf("expected to request 4 length bytes, got %d", request)
 		}
+		// Verify the deadline was set appropriately.
+		fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+		if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+			t.Fatalf("read deadline was not updated correctly, delta: %v", fuzzyDelta)
+		}
+
 		conn.readResponse <- fakeConnReadResponse{
 			Buf: []byte{0x00, 0x00, 0x00, 0x00},
 			Err: nil,
-		}
-		// Verify the deadline was set appropriately.
-		fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
-		if fuzzyDelta > 10*time.Millisecond || fuzzyDelta < -10*time.Millisecond {
-			t.Fatalf("read deadline was not updated correctly, delta: %v", fuzzyDelta)
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("expected read request")
@@ -285,115 +401,155 @@ func TestReadTCPRosMessage_emptyMessage(t *testing.T) {
 		} else if len(result.Buf) != 0 {
 			t.Fatalf("buffer mismatch. Result: %v, expected: []", result.Buf)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatalf("expected to receive result")
 	}
-
-	ctx.cleanUp()
 }
 
 func TestReadTCPRosMessage_whenCancelled_isSilent(t *testing.T) {
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 	conn := newFakeConn()
 
 	go readTCPRosMessage(ctx, conn, resultChan)
 
 	ctx.cancel(t, time.Second)
 
-	select {
-	case <-conn.readRequest:
-		conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: nil}
-	case result := <-resultChan:
-		t.Fatalf("expected cancelled read to close silently, got buf: %v err: %v", result.Buf, result.Err)
-	case <-time.After(200 * time.Millisecond):
+	done := false
+	for done == false {
+		select {
+		case <-conn.readRequest:
+			conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: nil}
+		case result := <-resultChan:
+			t.Fatalf("expected cancelled read to close silently, got buf: %v err: %v", result.Buf, result.Err)
+		case <-time.After(time.Second):
+			done = true
+		}
 	}
-	ctx.cleanUp()
 }
 
 func TestReadTCPRosMessage_whenEOFError_returnsError(t *testing.T) {
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 	conn := newFakeConn()
 	go readTCPRosMessage(ctx, conn, resultChan)
 
-	select {
-	case <-conn.readRequest:
-		conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: io.EOF}
-	case result := <-resultChan:
-		if result.Err != io.EOF {
-			t.Fatalf("unexpected error %v", result.Err)
+	done := false
+	for done == false {
+		select {
+		case <-conn.readRequest:
+			conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: io.EOF}
+		case result := <-resultChan:
+			if result.Err != io.EOF {
+				t.Fatalf("unexpected error %v", result.Err)
+			}
+			done = true
+		case <-time.After(time.Second):
+			t.Fatalf("expected to receive conn error")
 		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatalf("expected to receive conn error")
 	}
-	ctx.cleanUp()
+}
+
+func TestReadTCPRosMessage_whenTimeoutErrorWaitingForSize_continuesTrying(t *testing.T) {
+	resultChan := make(chan TCPRosReadResult)
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+	conn := newFakeConn()
+
+	go readTCPRosMessage(ctx, conn, resultChan)
+
+	readCount := 0
+
+	done := false
+	for done == false {
+		select {
+		case <-conn.readRequest:
+			conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: os.ErrDeadlineExceeded}
+			readCount++
+			if readCount > 10 { // arbitrary attempts to continue.
+				done = true
+			}
+		case result := <-resultChan:
+			t.Fatalf("unexpected result returned early: %v", result.Err)
+		}
+	}
 }
 
 func TestReadTCPRosMessage_whenTimeoutErrorDuringSize_returnsError(t *testing.T) {
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 	conn := newFakeConn()
 
 	go readTCPRosMessage(ctx, conn, resultChan)
 
 	readCount := 0
 
-	select {
-	case <-conn.readRequest:
-		if readCount == 0 {
-			conn.readResponse <- fakeConnReadResponse{Buf: []byte{0, 0, 0}, Err: nil}
-		} else {
-			conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: os.ErrDeadlineExceeded}
+	done := false
+	for done == false {
+		select {
+		case <-conn.readRequest:
+			if readCount == 0 {
+				conn.readResponse <- fakeConnReadResponse{Buf: []byte{0, 0, 0}, Err: nil}
+			} else {
+				conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: os.ErrDeadlineExceeded}
+			}
+			readCount++
+		case result := <-resultChan:
+			if readCount == 0 {
+				t.Fatalf("result returned early: %v", result.Err)
+			}
+			if result.Err != os.ErrDeadlineExceeded {
+				t.Fatalf("unexpected error %v", result.Err)
+			}
+			done = true
+		case <-time.After(200 * time.Millisecond):
+			t.Fatalf("expected to receive timeout error")
 		}
-		readCount++
-	case result := <-resultChan:
-		if readCount == 0 {
-			t.Fatalf("result returned early: %v", result.Err)
-		}
-		if result.Err != os.ErrDeadlineExceeded {
-			t.Fatalf("unexpected error %v", result.Err)
-		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatalf("expected to receive timeout error")
 	}
-	ctx.cleanUp()
 }
 
 func TestReadTCPRosMessage_whenTimeoutErrorDuringData_returnsError(t *testing.T) {
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 	conn := newFakeConn()
 	go readTCPRosMessage(ctx, conn, resultChan)
 
 	readCount := 0
 
-	select {
-	case <-conn.readRequest:
-		if readCount == 0 {
-			conn.readResponse <- fakeConnReadResponse{Buf: []byte{0x02, 0x00, 0x00, 0x00}, Err: nil}
-		} else if readCount == 1 {
-			conn.readResponse <- fakeConnReadResponse{Buf: []byte{0x01}, Err: nil}
-		} else {
-			conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: os.ErrDeadlineExceeded}
+	done := false
+	for done == false {
+		select {
+		case <-conn.readRequest:
+			if readCount == 0 {
+				conn.readResponse <- fakeConnReadResponse{Buf: []byte{0x02, 0x00, 0x00, 0x00}, Err: nil}
+			} else if readCount == 1 {
+				conn.readResponse <- fakeConnReadResponse{Buf: []byte{0x01}, Err: nil}
+			} else {
+				conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: os.ErrDeadlineExceeded}
+			}
+			readCount++
+		case result := <-resultChan:
+			if readCount == 0 {
+				t.Fatalf("result returned early: %v", result.Err)
+			}
+			if result.Err != os.ErrDeadlineExceeded {
+				t.Fatalf("unexpected error %v", result.Err)
+			}
+			done = true
+		case <-time.After(200 * time.Millisecond):
+			t.Fatalf("expected to receive timeout error")
 		}
-		readCount++
-	case result := <-resultChan:
-		if readCount == 0 {
-			t.Fatalf("result returned early: %v", result.Err)
-		}
-		if result.Err != os.ErrDeadlineExceeded {
-			t.Fatalf("unexpected error %v", result.Err)
-		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatalf("expected to receive timeout error")
 	}
-	ctx.cleanUp()
 }
 
 func TestReadTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
 	resultChan := make(chan TCPRosReadResult)
 	ctx := newFakeContext()
+	defer ctx.cleanUp()
 	conn := newFakeConn()
 	writer := bytes.NewBuffer(make([]byte, 0, 4))
 	// Write the maximum size.
@@ -406,29 +562,32 @@ func TestReadTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
 
 	readCount := 0
 
-	select {
-	case <-conn.readRequest:
-		if readCount == 0 {
-			conn.readResponse <- fakeConnReadResponse{Buf: writer.Bytes(), Err: nil}
-		} else {
-			t.Fatalf("requested additional reads after exceeding size limits")
-		}
-		readCount++
-	case result := <-resultChan:
-		if err, ok := result.Err.(*TCPRosError); ok {
-			if *err != TCPRosErrorSizeTooLarge {
+	done := false
+	for done == false {
+		select {
+		case <-conn.readRequest:
+			if readCount == 0 {
+				conn.readResponse <- fakeConnReadResponse{Buf: writer.Bytes(), Err: nil}
+			} else {
+				t.Fatalf("requested additional reads after exceeding size limits")
+			}
+			readCount++
+		case result := <-resultChan:
+			if err, ok := result.Err.(*TCPRosError); ok {
+				if *err != TCPRosErrorSizeTooLarge {
+					t.Fatalf("unexpected error %v", result.Err)
+				}
+			} else {
 				t.Fatalf("unexpected error %v", result.Err)
 			}
-		} else {
-			t.Fatalf("unexpected error %v", result.Err)
+			done = true
+		case <-time.After(200 * time.Millisecond):
+			t.Fatalf("expected to receive size error")
 		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatalf("expected to receive size error")
 	}
-	ctx.cleanUp()
 }
 
-// // Write Message Tests
+// Write Message Tests
 
 // func Test_writeTCPRosMessage_successfulCases(t *testing.T) {
 // 	testCases := []struct {
@@ -451,10 +610,10 @@ func TestReadTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
 
 // 	resultChan := make(chan error)
 // 	ctx := newFakeContext()
+// 	defer ctx.cleanUp()
 
 // 	for i, testCase := range testCases {
 // 		conn := newFakeConn()
-// 		conn.writeN = 1000 // Allow writing all at once
 // 		go writeTCPRosMessage(ctx, conn, testCase.message, resultChan)
 
 // 		iter := 0
@@ -481,5 +640,66 @@ func TestReadTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
 // 			t.Fatalf("[%d]: expected to receive result", i)
 // 		}
 // 	}
-// 	ctx.cleanUp()
+
+// 	conn.readDeadline = time.Time{}
+// 	fuzzyDeadline := time.Now().Add(tcpRosReadTimeout)
+
+// 	select {
+// 	case request := <-conn.readRequest:
+// 		if request != 4 {
+// 			t.Fatalf("[%d]: expected to request 4 length bytes, got %d", i, request)
+// 		}
+
+// 		// Verify the deadline was set appropriately.
+// 		fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+// 		if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+// 			t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+// 		}
+// 		conn.readDeadline = time.Time{}
+
+// 		conn.readResponse <- fakeConnReadResponse{
+// 			Buf: testCase.bytes[:4],
+// 			Err: nil,
+// 		}
+
+// 	case <-time.After(time.Second):
+// 		t.Fatalf("[%d]: expected read request", i)
+// 	}
+
+// 	fuzzyDeadline = time.Now().Add(tcpRosReadTimeout)
+
+// 	select {
+// 	case request := <-conn.readRequest:
+// 		if request != len(testCase.expected) {
+// 			t.Fatalf("[%d]: expected to request %d length bytes, got %d", i, len(testCase.expected), request)
+// 		}
+
+// 		// Verify the deadline was set appropriately.
+// 		fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
+// 		if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+// 			t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+// 		}
+
+// 		conn.readResponse <- fakeConnReadResponse{
+// 			Buf: testCase.bytes[4:],
+// 			Err: nil,
+// 		}
+
+// 	case <-time.After(time.Second):
+// 		t.Fatalf("[%d]: expected read request", i)
+// 	}
+
+// 	select {
+// 	case result := <-resultChan:
+// 		if result.Err != nil {
+// 			t.Fatalf("[%d]: unexpected error %v", i, result.Err)
+// 		}
+// 		if result.Buf == nil {
+// 			t.Fatalf("[%d]: result buffer is nil", i)
+// 		} else if string(result.Buf) != string(testCase.expected) {
+// 			t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, result.Buf, testCase.expected)
+// 		}
+// 	case <-time.After(time.Second):
+// 		t.Fatalf("[%d]: expected to receive result", i)
+// 	}
 // }
