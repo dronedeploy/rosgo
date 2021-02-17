@@ -39,15 +39,14 @@ type TCPRosReadResult struct {
 
 var decoder ByteDecoder = &LEByteDecoder{}
 
-// readTcpRosMessage is a rosgo library utility for performing common reads of ros messages from a connection.
-// it should always be called as a go routine, and will return an error on the result channel when it returns.
+// readTcpRosMessage performs asynchronous TCPROS message reads.
+// Once it is done, it sends a result on the result channel, unless the context has been cancelled.
 func readTCPRosMessage(ctx goContext.Context, conn net.Conn, resultChan chan TCPRosReadResult) {
-
 	size, err := readTCPRosSize(ctx, conn)
 
-	select {
+	select { // Bail if the context has been cancelled.
 	case <-ctx.Done():
-		return // Bail if the context has been cancelled.
+		return
 	default:
 	}
 
@@ -63,25 +62,22 @@ func readTCPRosMessage(ctx goContext.Context, conn net.Conn, resultChan chan TCP
 	}
 
 	data, err := readTCPRosData(ctx, conn, size)
-	select {
+	select { // Bail if the context has been cancelled.
 	case <-ctx.Done():
-		return // Bail if the context has been cancelled.
+		return
 	default:
 	}
 
-	if err != nil {
-		resultChan <- TCPRosReadResult{nil, err}
-		return
-	}
-
-	resultChan <- TCPRosReadResult{data, nil}
+	resultChan <- TCPRosReadResult{data, err}
 }
 
+// writeTcpRosMessage performs asynchronous TCPROS message writes.
+// Once it is done, it sends a result on the result channel, unless the context has been cancelled.
 func writeTCPRosMessage(ctx goContext.Context, conn net.Conn, msgBuf []byte, resultChan chan error) {
 
 	err := writeTCPRosSize(ctx, conn, uint32(len(msgBuf)))
 
-	select {
+	select { // Bail if the context has been cancelled.
 	case <-ctx.Done():
 		return
 	default:
@@ -94,7 +90,7 @@ func writeTCPRosMessage(ctx goContext.Context, conn net.Conn, msgBuf []byte, res
 
 	err = writeTCPRosBuf(ctx, conn, msgBuf)
 
-	select {
+	select { // Bail if the context has been cancelled.
 	case <-ctx.Done():
 		return
 	default:
