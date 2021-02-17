@@ -17,15 +17,15 @@ func TestNewRate(t *testing.T) {
 }
 
 func TestCycleTime(t *testing.T) {
-	const MeasureTolerance int64 = 1000000
+	const MeasureTolerance int64 = 10000000
 
 	var d Duration
-	d.FromSec(0.01)
+	d.FromSec(0.1)
 	r := CycleTime(d)
 	if !r.actualCycleTime.IsZero() {
 		t.Fail()
 	}
-	if r.expectedCycleTime.ToSec() != 0.01 {
+	if r.expectedCycleTime.ToSec() != 0.1 {
 		t.Fail()
 	}
 
@@ -58,16 +58,16 @@ func TestRateReset(t *testing.T) {
 }
 
 func TestRateSleep(t *testing.T) {
-	// The jitter tolerance (5msec) doesn't have strong basis.
-	const JitterTolerance int64 = 5000000
-	ct := NewDuration(0, 100000000) // 10msec
+	// The jitter tolerance (50msec) doesn't have strong basis.
+	const JitterTolerance int64 = 50000000
+	ct := NewDuration(0, 100000000) // 100msec
 	r := CycleTime(ct)
 	if ct.Cmp(r.ExpectedCycleTime()) != 0 {
 		t.Fail()
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		start := time.Now().UnixNano()
-		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
+		time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 		r.Sleep()
 		end := time.Now().UnixNano()
 
