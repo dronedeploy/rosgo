@@ -15,7 +15,7 @@ import (
 // Helper structs.
 
 // Set up testMessage fakes.
-type testMessageType struct{}
+type testMessageType struct{ topic string }
 type testMessage struct{}
 
 // Ensure we satisfy the required interfaces.
@@ -23,7 +23,7 @@ var _ MessageType = testMessageType{}
 var _ Message = testMessage{}
 
 func (t testMessageType) Text() string {
-	return "test_message_type"
+	return t.topic
 }
 
 func (t testMessageType) MD5Sum() string {
@@ -39,7 +39,7 @@ func (t testMessageType) NewMessage() Message {
 }
 
 func (t testMessage) Type() MessageType {
-	return &testMessageType{}
+	return &testMessageType{"test"}
 }
 
 func (t testMessage) Serialize(buf *bytes.Buffer) error {
@@ -98,7 +98,7 @@ func TestSubscription_ReadSize(t *testing.T) {
 	}
 }
 
-// Error cases.
+// Read size error cases.
 func TestSubscription_ReadSize_TooLarge(t *testing.T) {
 	reader := testReader{[]byte{0x00, 0x00, 0x00, 0x80}, 4, nil}
 	_, res := readSize(&reader)
@@ -127,7 +127,7 @@ func TestSubscription_ReadSize_otherError(t *testing.T) {
 
 // Verify basic buffer reading works correctly.
 func TestSubscription_ReadRawData_ReadData(t *testing.T) {
-	subscription := getTestSubscription("testUri")
+	subscription := newTestSubscription("testUri")
 
 	reader := testReader{[]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 10, nil}
 
@@ -145,7 +145,7 @@ func TestSubscription_ReadRawData_ReadData(t *testing.T) {
 
 // Verify disconnection handling.
 func TestSubscription_ReadRawData_disconnected(t *testing.T) {
-	subscription := getTestSubscription("testUri")
+	subscription := newTestSubscription("testUri")
 
 	reader := testReader{[]byte{}, 0, io.EOF}
 
@@ -155,72 +155,13 @@ func TestSubscription_ReadRawData_disconnected(t *testing.T) {
 	}
 }
 
-// Create a new subscription and pass headers correctly.
-func TestSubscription_NewSubscription(t *testing.T) {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	pubURI := l.Addr().String()
-
-	subscription := getTestSubscription(pubURI)
-
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
-
-	subscription.start(&log)
-
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	readAndVerifySubscriberHeader(t, conn, subscription.topic, subscription.msgType)
-
-	replyHeader := []header{
-		{"topic", subscription.topic},
-		{"md5sum", subscription.msgType.MD5Sum()},
-		{"type", subscription.msgType.Name()},
-		{"callerid", "testPublisher"},
-	}
-
-	writeAndVerifyPublisherHeader(t, conn, subscription, replyHeader)
-
-	conn.Close()
-	l.Close()
-	select {
-	case <-subscription.remoteDisconnectedChan:
-		return
-	case <-time.After(time.Duration(100) * time.Millisecond):
-		t.Fatalf("Took too long for client to disconnect from publisher")
-	}
-}
-
 // Create a new subscription and pass headers still works when topic isn't provided by the publisher.
-func TestSubscription_NewSubscription_NoTopicInHeader(t *testing.T) {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
+	l, conn, subscription := createAndConnectToSubscription(t)
 	defer l.Close()
-	pubURI := l.Addr().String()
-
-	subscription := getTestSubscription(pubURI)
-
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
-
-	subscription.start(&log)
-
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer conn.Close()
 
-	readAndVerifySubscriberHeader(t, conn, subscription.topic, subscription.msgType)
+	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
 
 	replyHeader := []header{
 		{"md5sum", subscription.msgType.MD5Sum()},
@@ -250,28 +191,12 @@ func TestSubscription_NewSubscription_NoTopicInHeader(t *testing.T) {
 }
 
 // Subscription closes the connection when it receives an invalid response header.
-func TestSubscription_NewSubscription_InvalidResponseHeader(t *testing.T) {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestSubscription_HeaderExchange_InvalidResponse(t *testing.T) {
+	l, conn, subscription := createAndConnectToSubscription(t)
 	defer l.Close()
-	pubURI := l.Addr().String()
-
-	subscription := getTestSubscription(pubURI)
-
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
-
-	subscription.start(&log)
-
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer conn.Close()
 
-	readAndVerifySubscriberHeader(t, conn, subscription.topic, subscription.msgType)
+	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
 
 	invalidMD5 := "00112233445566778899aabbccddeeff"
 	replyHeader := []header{
@@ -288,7 +213,7 @@ func TestSubscription_NewSubscription_InvalidResponseHeader(t *testing.T) {
 	// Wait for the subscription to receive the data.
 	<-time.After(time.Millisecond)
 
-	// Expect the Subscription has closed the channel.
+	// Expect the Subscription has closed the connection.
 	dummySlice := make([]byte, 1)
 	if _, err := conn.Read(dummySlice); err != io.EOF {
 		t.Fatalf("expected subscription to close connection when receiving invalid header")
@@ -299,9 +224,31 @@ func TestSubscription_NewSubscription_InvalidResponseHeader(t *testing.T) {
 	l.Close()
 }
 
+// Subscription closes when stop channel is closed during header exchange.
+func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.T) {
+
+	l, conn, subscription := createAndConnectToSubscription(t)
+	defer l.Close()
+	defer conn.Close()
+
+	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
+
+	close(subscription.requestStopChan)
+
+	// Expect the Subscription has closed the connection.
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	dummySlice := make([]byte, 1)
+	if _, err := conn.Read(dummySlice); err != io.EOF {
+		t.Fatalf("expected subscription to close connection")
+	}
+
+	conn.Close()
+	l.Close()
+}
+
 // Valid messages are forwarded from the publisher TCP stream by the subscription.
 func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
+	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
 	defer l.Close()
 	defer conn.Close()
 
@@ -322,9 +269,31 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 	}
 }
 
+// Drip feed a message
+func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
+	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer l.Close()
+	defer conn.Close()
+
+	// Send data through the drip feed.
+	data := []byte{100: 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8}
+	dripFeedMessageBytes(t, conn, data)
+	receiveMessageInChannel(t, subscription.messageChan, data)
+
+	conn.Close()
+	l.Close()
+	select {
+	case channelName := <-subscription.remoteDisconnectedChan:
+		t.Log(channelName)
+		return
+	case <-time.After(time.Duration(100) * time.Millisecond):
+		t.Fatalf("Took too long for client to disconnect from publisher")
+	}
+}
+
 // The subscription adheres to the flow control policy.
 func TestSubscription_FlowControl(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
+	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
 	defer conn.Close()
 	defer l.Close()
 
@@ -358,7 +327,7 @@ func TestSubscription_FlowControl(t *testing.T) {
 
 // Request stop shuts down an active connection.
 func TestSubscription_RequestStop(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
+	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
 	defer l.Close()
 	defer conn.Close()
 
@@ -379,7 +348,7 @@ func TestSubscription_RequestStop(t *testing.T) {
 // Private Helper functions.
 
 // Create a test subscription object.
-func getTestSubscription(pubURI string) *defaultSubscription {
+func newTestSubscription(pubURI string) *defaultSubscription {
 
 	topic := "/test/topic"
 	nodeID := "testNode"
@@ -387,7 +356,7 @@ func getTestSubscription(pubURI string) *defaultSubscription {
 	requestStopChan := make(chan struct{})
 	remoteDisconnectedChan := make(chan string)
 	enableChan := make(chan bool)
-	msgType := testMessageType{}
+	msgType := testMessageType{topic}
 
 	return newDefaultSubscription(
 		pubURI, topic, msgType, nodeID,
@@ -397,10 +366,21 @@ func getTestSubscription(pubURI string) *defaultSubscription {
 		remoteDisconnectedChan)
 }
 
-// readAndVerifySubscriberHeader reads the incoming header from the subscriber, and verifies header contents.
-func readAndVerifySubscriberHeader(t *testing.T, conn net.Conn, topic string, msgType MessageType) {
-	resHeaders, err := readConnectionHeader(conn)
+// doHeaderExchange emulates the header exchange as a service server. Puts the client in a state where it is ready to send a request.
+func doHeaderExchangeAsPublisher(t *testing.T, conn net.Conn, subscription *defaultSubscription) {
+	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
+	replyHeader := []header{
+		{"topic", subscription.topic},
+		{"md5sum", subscription.msgType.MD5Sum()},
+		{"type", subscription.msgType.Name()},
+		{"callerid", "testPublisher"},
+	}
+	writeAndVerifyPublisherHeader(t, conn, subscription, replyHeader)
+}
 
+// readAndVerifySubscriberHeader reads the incoming header from the subscriber, and verifies header contents.
+func readAndVerifySubscriberHeader(t *testing.T, conn net.Conn, msgType MessageType) {
+	resHeaders, err := readConnectionHeader(conn)
 	if err != nil {
 		t.Fatal("Failed to read header:", err)
 	}
@@ -414,8 +394,8 @@ func readAndVerifySubscriberHeader(t *testing.T, conn net.Conn, topic string, ms
 		t.Fatalf("incorrect MD5 sum %s", resHeaderMap["md5sum"])
 	}
 
-	if resHeaderMap["topic"] != topic {
-		t.Fatalf("incorrect topic: %s", topic)
+	if resHeaderMap["topic"] != msgType.Text() {
+		t.Fatalf("incorrect topic: %s", msgType.Text())
 	}
 
 	if resHeaderMap["type"] != msgType.Name() {
@@ -435,7 +415,7 @@ func writeAndVerifyPublisherHeader(t *testing.T, conn net.Conn, subscription *de
 	}
 
 	// Wait for the subscription to receive the data.
-	<-time.After(time.Millisecond)
+	<-time.After(50 * time.Millisecond)
 
 	for _, expected := range replyHeader {
 		if result, ok := subscription.event.ConnectionHeader[expected.key]; ok {
@@ -451,7 +431,11 @@ func writeAndVerifyPublisherHeader(t *testing.T, conn net.Conn, subscription *de
 // sendMessageAndReceiveInChannel sends a message which we expect is passed on by the subscription.
 func sendMessageAndReceiveInChannel(t *testing.T, conn net.Conn, msgChan chan messageEvent, buffer []byte) {
 	sendMessageBytes(t, conn, buffer)
+	receiveMessageInChannel(t, msgChan, buffer)
+}
 
+// receiveMessageInChannel verifies that we receive the expected message.
+func receiveMessageInChannel(t *testing.T, msgChan chan messageEvent, buffer []byte) {
 	select {
 	case message := <-msgChan:
 
@@ -467,7 +451,7 @@ func sendMessageAndReceiveInChannel(t *testing.T, conn net.Conn, msgChan chan me
 			}
 		}
 		return
-	case <-time.After(time.Duration(10) * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatalf("Did not receive message from channel")
 	}
 }
@@ -487,7 +471,7 @@ func sendMessageNoReceive(t *testing.T, conn net.Conn, msgChan chan messageEvent
 // sendMessageBytes sends a message payload as per TCPROS spec.
 func sendMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
 	if len(buffer) > 255 {
-		t.Fatalf("sendMessageAndReceiveInChannel helper doesn't support more than 255 bytes!")
+		t.Fatalf("sendMessageBytes helper doesn't support more than 255 bytes!")
 	}
 
 	// Packet structure is [ LENGTH<uint32> | PAYLOAD<bytes[LENGTH]> ].
@@ -502,6 +486,25 @@ func sendMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
 	}
 }
 
+// sendMessageBytes sends a message payload as per TCPROS spec.
+func dripFeedMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
+	if len(buffer) > 255 {
+		t.Fatalf("dripFeedMessageBytes helper doesn't support more than 255 bytes!")
+	}
+
+	// Packet structure is [ LENGTH<uint32> | PAYLOAD<bytes[LENGTH]> ].
+	length := uint8(len(buffer))
+	message := append([]byte{length, 0x00, 0x00, 0x00}, buffer...)
+	for i := range message {
+		n, err := conn.Write(message[:1])
+		message = message[1:]
+		if n != 1 || err != nil {
+			t.Fatalf("[%d]: failed to drip feed message, n: %d : err: %s", i, n, err)
+		}
+		<-time.After(20 * time.Millisecond)
+	}
+}
+
 // createAndConnectToSubscription creates a new subscription struct and prepares a TCPROS session where we are ready to exchange messages.
 func createAndConnectToSubscription(t *testing.T) (net.Listener, net.Conn, *defaultSubscription) {
 	l, err := net.Listen("tcp", ":0")
@@ -510,7 +513,7 @@ func createAndConnectToSubscription(t *testing.T) (net.Listener, net.Conn, *defa
 	}
 	pubURI := l.Addr().String()
 
-	subscription := getTestSubscription(pubURI)
+	subscription := newTestSubscription(pubURI)
 
 	logger := modular.NewRootLogger(logrus.New())
 	log := logger.GetModuleLogger()
@@ -522,18 +525,13 @@ func createAndConnectToSubscription(t *testing.T) (net.Listener, net.Conn, *defa
 		t.Fatal(err)
 	}
 
-	readAndVerifySubscriberHeader(t, conn, subscription.topic, subscription.msgType)
+	return l, conn, subscription
+}
 
-	replyHeader := []header{
-		{"topic", subscription.topic},
-		{"md5sum", subscription.msgType.MD5Sum()},
-		{"type", subscription.msgType.Name()},
-		{"callerid", "testPublisher"},
-	}
-
-	if err := writeConnectionHeader(replyHeader, conn); err != nil {
-		t.Fatalf("Failed to write header: %s, error: %s", replyHeader, err)
-	}
+// createAndConnectSubscriptionToPublisher creates a new subscription struct and prepares a TCPROS session where we are ready to exchange messages.
+func createAndConnectSubscriptionToPublisher(t *testing.T) (net.Listener, net.Conn, *defaultSubscription) {
+	l, conn, subscription := createAndConnectToSubscription(t)
+	doHeaderExchangeAsPublisher(t, conn, subscription)
 
 	return l, conn, subscription
 }

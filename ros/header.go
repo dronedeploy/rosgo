@@ -30,15 +30,20 @@ func readConnectionHeader(r io.Reader) ([]header, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf = make([]byte, int(headerSize))
-	_, err = io.ReadAtLeast(r, buf, int(headerSize))
+
+	return readConnectionHeaderPayload(r, headerSize)
+}
+
+func readConnectionHeaderPayload(r io.Reader, headerSize uint32) ([]header, error) {
+	buf := make([]byte, int(headerSize))
+	_, err := io.ReadAtLeast(r, buf, int(headerSize))
 	if err != nil {
 		return nil, err
 	}
 
 	var done uint32 = 0
 	var headers []header
-	bufReader = bytes.NewBuffer(buf)
+	bufReader := bytes.NewBuffer(buf)
 	for {
 		if done == headerSize {
 			break

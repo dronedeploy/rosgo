@@ -15,13 +15,13 @@ import (
 
 func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 	topic := "/test/topic"
-	msgType := testMessageType{}
+	msgType := testMessageType{topic}
 
 	l, conn, _, _, _, disconnectedChan := setupRemotePublisherConnTest(t)
 	defer l.Close()
 	defer conn.Close()
 
-	readAndVerifySubscriberHeader(t, conn, topic, msgType) // Test helper from subscription_test.go.
+	readAndVerifySubscriberHeader(t, conn, msgType) // Test helper from subscription_test.go.
 
 	replyHeader := []header{
 		{"topic", topic},
@@ -52,9 +52,11 @@ func TestRemotePublisherConn_ClosesFromSignal(t *testing.T) {
 	defer conn.Close()
 
 	connectToSubscriber(t, conn)
+	<-time.After(time.Duration(50 * time.Millisecond))
 
 	// Signal to close.
 	quitChan <- struct{}{}
+	<-time.After(time.Duration(50 * time.Millisecond))
 
 	// Check that buffer closed.
 	buffer := make([]byte, 1)
