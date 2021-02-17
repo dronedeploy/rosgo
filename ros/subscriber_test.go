@@ -52,9 +52,11 @@ func TestRemotePublisherConn_ClosesFromSignal(t *testing.T) {
 	defer conn.Close()
 
 	connectToSubscriber(t, conn)
+	<-time.After(time.Duration(50 * time.Millisecond))
 
 	// Signal to close.
 	quitChan <- struct{}{}
+	<-time.After(time.Duration(50 * time.Millisecond))
 
 	// Check that buffer closed.
 	buffer := make([]byte, 1)

@@ -199,6 +199,7 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 
 	for i, testCase := range testCases {
 		conn := newFakeConn()
+		conn.readDeadline = time.Time{} // Must set before starting the tcpros read.
 
 		closed := make(chan struct{})
 		go func() {
@@ -206,9 +207,7 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 			closed <- struct{}{}
 		}()
 
-		conn.readDeadline = time.Time{}
 		fuzzyDeadline := time.Now().Add(tcpRosReadTimeout)
-
 		remainingRead := testCase.bytes
 
 		index := 0
@@ -224,7 +223,7 @@ func TestReadTCPRosMessage_successfulCases(t *testing.T) {
 				// Verify the deadline was set appropriately.
 				fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
 				if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
-					t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+					t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v, index: %d", i, fuzzyDelta, index)
 				}
 				// Reset the deadlines for the next read.
 				conn.readDeadline = time.Time{}
@@ -312,6 +311,7 @@ func TestReadTCPRosMessage_emptyMessage(t *testing.T) {
 	defer ctx.cleanUp()
 
 	conn := newFakeConn()
+	conn.readDeadline = time.Time{}
 
 	closed := make(chan struct{})
 	go func() {
@@ -319,7 +319,6 @@ func TestReadTCPRosMessage_emptyMessage(t *testing.T) {
 		closed <- struct{}{}
 	}()
 
-	conn.readDeadline = time.Time{}
 	fuzzyDeadline := time.Now().Add(tcpRosReadTimeout)
 
 	select {
@@ -482,9 +481,12 @@ func TestReadTCPRosMessage_whenTimeoutErrorWaitingForSize_continuesTrying(t *tes
 
 	ctx.cancel()
 	select {
-	case <-closed:
+	case <-conn.readRequest:
+		// We might get stuck back in a read, send another timeout response to end the read.
+		conn.readResponse <- fakeConnReadResponse{Buf: []byte{}, Err: os.ErrDeadlineExceeded}
 	case <-time.After(time.Second):
 		t.Fatalf("read go routine did not end")
+	case <-closed:
 	}
 }
 
@@ -671,13 +673,14 @@ func TestWriteTCPRosMessage_successfulCases(t *testing.T) {
 
 	for i, testCase := range testCases {
 		conn := newFakeConn()
+		conn.writeDeadline = time.Time{}
+
 		closed := make(chan struct{})
 		go func() {
 			writeTCPRosMessage(ctx, conn, testCase.message, resultChan)
 			closed <- struct{}{}
 		}()
 
-		conn.writeDeadline = time.Time{}
 		fuzzyDeadline := time.Now().Add(tcpRosWriteTimeout)
 
 		writtenBytes := make([]byte, 0, len(testCase.expected))
@@ -857,7 +860,3 @@ func TestWriteTCPRosMessage_timeoutError_returnsError(t *testing.T) {
 		}
 	}
 }
-
-// TODO tests:
-// - timeout error during write, iterate throughout a [2,0,0,0,1,2] and timeout at each step
-// - other error?

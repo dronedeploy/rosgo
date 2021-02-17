@@ -226,7 +226,6 @@ func TestSubscription_HeaderExchange_InvalidResponse(t *testing.T) {
 
 // Subscription closes when stop channel is closed during header exchange.
 func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.T) {
-	t.Skip("TODO as part of RA-474")
 
 	l, conn, subscription := createAndConnectToSubscription(t)
 	defer l.Close()
@@ -258,6 +257,28 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 
 	// Send another one!
 	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8})
+
+	conn.Close()
+	l.Close()
+	select {
+	case channelName := <-subscription.remoteDisconnectedChan:
+		t.Log(channelName)
+		return
+	case <-time.After(time.Duration(100) * time.Millisecond):
+		t.Fatalf("Took too long for client to disconnect from publisher")
+	}
+}
+
+// Drip feed a message
+func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
+	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer l.Close()
+	defer conn.Close()
+
+	// Send data through the drip feed.
+	data := []byte{100: 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8}
+	dripFeedMessageBytes(t, conn, data)
+	receiveMessageInChannel(t, subscription.messageChan, data)
 
 	conn.Close()
 	l.Close()
@@ -394,7 +415,7 @@ func writeAndVerifyPublisherHeader(t *testing.T, conn net.Conn, subscription *de
 	}
 
 	// Wait for the subscription to receive the data.
-	<-time.After(time.Millisecond)
+	<-time.After(50 * time.Millisecond)
 
 	for _, expected := range replyHeader {
 		if result, ok := subscription.event.ConnectionHeader[expected.key]; ok {
@@ -410,7 +431,11 @@ func writeAndVerifyPublisherHeader(t *testing.T, conn net.Conn, subscription *de
 // sendMessageAndReceiveInChannel sends a message which we expect is passed on by the subscription.
 func sendMessageAndReceiveInChannel(t *testing.T, conn net.Conn, msgChan chan messageEvent, buffer []byte) {
 	sendMessageBytes(t, conn, buffer)
+	receiveMessageInChannel(t, msgChan, buffer)
+}
 
+// receiveMessageInChannel verifies that we receive the expected message.
+func receiveMessageInChannel(t *testing.T, msgChan chan messageEvent, buffer []byte) {
 	select {
 	case message := <-msgChan:
 
@@ -426,7 +451,7 @@ func sendMessageAndReceiveInChannel(t *testing.T, conn net.Conn, msgChan chan me
 			}
 		}
 		return
-	case <-time.After(time.Duration(10) * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatalf("Did not receive message from channel")
 	}
 }
@@ -446,7 +471,7 @@ func sendMessageNoReceive(t *testing.T, conn net.Conn, msgChan chan messageEvent
 // sendMessageBytes sends a message payload as per TCPROS spec.
 func sendMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
 	if len(buffer) > 255 {
-		t.Fatalf("sendMessageAndReceiveInChannel helper doesn't support more than 255 bytes!")
+		t.Fatalf("sendMessageBytes helper doesn't support more than 255 bytes!")
 	}
 
 	// Packet structure is [ LENGTH<uint32> | PAYLOAD<bytes[LENGTH]> ].
@@ -458,6 +483,25 @@ func sendMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
 	n, err = conn.Write(buffer) // payload
 	if n != len(buffer) || err != nil {
 		t.Fatalf("Failed to write message payload, n: %d : err: %s", n, err)
+	}
+}
+
+// sendMessageBytes sends a message payload as per TCPROS spec.
+func dripFeedMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
+	if len(buffer) > 255 {
+		t.Fatalf("dripFeedMessageBytes helper doesn't support more than 255 bytes!")
+	}
+
+	// Packet structure is [ LENGTH<uint32> | PAYLOAD<bytes[LENGTH]> ].
+	length := uint8(len(buffer))
+	message := append([]byte{length, 0x00, 0x00, 0x00}, buffer...)
+	for i := range message {
+		n, err := conn.Write(message[:1])
+		message = message[1:]
+		if n != 1 || err != nil {
+			t.Fatalf("[%d]: failed to drip feed message, n: %d : err: %s", i, n, err)
+		}
+		<-time.After(20 * time.Millisecond)
 	}
 }
 
