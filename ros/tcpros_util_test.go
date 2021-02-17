@@ -25,7 +25,7 @@ func newFakeContext() *fakeContext {
 }
 
 // Helper for cleanup in a test.
-func (ctx *fakeContext) cancel(t *testing.T, d time.Duration) {
+func (ctx *fakeContext) cancel() {
 	close(ctx.done)
 }
 
@@ -414,7 +414,7 @@ func TestReadTCPRosMessage_whenCancelled_isSilent(t *testing.T) {
 
 	go readTCPRosMessage(ctx, conn, resultChan)
 
-	ctx.cancel(t, time.Second)
+	ctx.cancel()
 
 	done := false
 	for done == false {
@@ -589,117 +589,237 @@ func TestReadTCPRosMessage_whenDataSizeIsTooHigh_returnsError(t *testing.T) {
 
 // Write Message Tests
 
-// func Test_writeTCPRosMessage_successfulCases(t *testing.T) {
-// 	testCases := []struct {
-// 		message  []byte
-// 		expected []byte
-// 	}{
-// 		{ // Zero data case.
-// 			[]byte{},
-// 			[]byte{0x00, 0x00, 0x00, 0x00},
-// 		},
-// 		{ // Has data case.
-// 			[]byte{'a'},
-// 			[]byte{0x01, 0x00, 0x00, 0x00, 'a'},
-// 		},
-// 		{ // More data case.
-// 			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
-// 			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
-// 		},
-// 	}
+func TestWriteTCPRosMessage_successfulCases(t *testing.T) {
+	testCases := []struct {
+		message  []byte
+		expected []byte
+		dripFeed bool
+	}{
+		{ // Zero data case.
+			[]byte{},
+			[]byte{0x00, 0x00, 0x00, 0x00},
+			false,
+		},
+		{ // Has data case.
+			[]byte{'a'},
+			[]byte{0x01, 0x00, 0x00, 0x00, 'a'},
+			false,
+		},
+		{ // More data case.
+			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
+			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
+			false,
+		},
+		{ // Zero data case with drip feed.
+			[]byte{},
+			[]byte{0x00, 0x00, 0x00, 0x00},
+			true,
+		},
+		{ // Has data case with drip feed.
+			[]byte{'a'},
+			[]byte{0x01, 0x00, 0x00, 0x00, 'a'},
+			true,
+		},
+		{ // More data case with drip feed..
+			[]byte{'a', 'b', 'c', 'd', 'e', 'f'},
+			[]byte{0x06, 0x00, 0x00, 0x00, 'a', 'b', 'c', 'd', 'e', 'f'},
+			true,
+		},
+	}
 
-// 	resultChan := make(chan error)
-// 	ctx := newFakeContext()
-// 	defer ctx.cleanUp()
+	resultChan := make(chan error)
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
 
-// 	for i, testCase := range testCases {
-// 		conn := newFakeConn()
-// 		go writeTCPRosMessage(ctx, conn, testCase.message, resultChan)
+	for i, testCase := range testCases {
+		conn := newFakeConn()
+		closed := make(chan struct{})
+		go func() {
+			writeTCPRosMessage(ctx, conn, testCase.message, resultChan)
+			closed <- struct{}{}
+		}()
 
-// 		iter := 0
+		conn.writeDeadline = time.Time{}
+		fuzzyDeadline := time.Now().Add(tcpRosWriteTimeout)
 
-// 		for {
-// 			<-time.After(time.Millisecond)
-// 			if len(conn.writeBytes) == len(testCase.expected) {
-// 				break
-// 			}
-// 			if iter++; iter > 1000 {
-// 				t.Fatalf("[%d]: failed to write the correct number of bytes", i)
-// 			}
-// 		}
+		writtenBytes := make([]byte, 0, len(testCase.expected))
 
-// 		select {
-// 		case err := <-resultChan:
-// 			if err != nil {
-// 				t.Fatalf("[%d]: unexpected error %v", i, err)
-// 			}
-// 			if string(conn.writeBytes) != string(testCase.expected) {
-// 				t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, conn.writeBytes, testCase.expected)
-// 			}
-// 		case <-time.After(200 * time.Millisecond):
-// 			t.Fatalf("[%d]: expected to receive result", i)
-// 		}
-// 	}
+		done := false
+		for done == false {
+			select {
+			case request := <-conn.writeRequest:
+				if len(request) == 0 {
+					t.Fatalf("[%d]: unexpected zero length write request", i)
+				}
+				totalN := len(request) + len(writtenBytes)
+				if totalN > len(testCase.expected) {
+					t.Fatalf("[%d]: expected to write %d length bytes, got %d", i, len(testCase.expected), totalN)
+				}
 
-// 	conn.readDeadline = time.Time{}
-// 	fuzzyDeadline := time.Now().Add(tcpRosReadTimeout)
+				// Verify the deadline was set appropriately.
+				fuzzyDelta := conn.writeDeadline.Sub(fuzzyDeadline)
+				if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
+					t.Fatalf("[%d]: write deadline was not updated correctly, delta: %v", i, fuzzyDelta)
+				}
+				conn.writeDeadline = time.Time{}
+				fuzzyDeadline = time.Now().Add(tcpRosWriteTimeout)
 
-// 	select {
-// 	case request := <-conn.readRequest:
-// 		if request != 4 {
-// 			t.Fatalf("[%d]: expected to request 4 length bytes, got %d", i, request)
-// 		}
+				// If we are drip feeding, then write only one byte at a time.
+				var write []byte
+				if testCase.dripFeed {
+					write = request[:1]
+				} else {
+					write = request
+				}
+				writtenBytes = append(writtenBytes, write...)
+				conn.writeResponse <- fakeConnWriteResponse{
+					N:   len(write),
+					Err: nil,
+				}
+			case err := <-resultChan:
+				if err != nil {
+					t.Fatalf("[%d]: unexpected error %v", i, err)
+				}
+				if string(writtenBytes) != string(testCase.expected) {
+					t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, writtenBytes, testCase.expected)
+				}
+				done = true
+			case <-time.After(time.Second):
+				t.Fatalf("[%d]: expected write request", i)
+			}
+		}
+		select {
+		case <-closed:
+		case <-time.After(time.Second):
+			t.Fatalf("[%d]: write routine did not end", i)
+		}
+	}
+}
 
-// 		// Verify the deadline was set appropriately.
-// 		fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
-// 		if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
-// 			t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
-// 		}
-// 		conn.readDeadline = time.Time{}
+func TestWriteTCPRosMessage_contextCancelled_isSilent(t *testing.T) {
 
-// 		conn.readResponse <- fakeConnReadResponse{
-// 			Buf: testCase.bytes[:4],
-// 			Err: nil,
-// 		}
+	message := []byte{'a', 'b'}
+	expected := []byte{0x06, 0x00, 0x00, 0x00, 'a', 'b'}
 
-// 	case <-time.After(time.Second):
-// 		t.Fatalf("[%d]: expected read request", i)
-// 	}
+	resultChan := make(chan error)
 
-// 	fuzzyDeadline = time.Now().Add(tcpRosReadTimeout)
+	for i := range expected {
+		ctx := newFakeContext()
+		defer ctx.cleanUp()
 
-// 	select {
-// 	case request := <-conn.readRequest:
-// 		if request != len(testCase.expected) {
-// 			t.Fatalf("[%d]: expected to request %d length bytes, got %d", i, len(testCase.expected), request)
-// 		}
+		if i == 0 {
+			ctx.cancel() // Early cancel for this case.
+		}
 
-// 		// Verify the deadline was set appropriately.
-// 		fuzzyDelta := conn.readDeadline.Sub(fuzzyDeadline)
-// 		if fuzzyDelta > fuzzyTimeTolerance || fuzzyDelta < -fuzzyTimeTolerance {
-// 			t.Fatalf("[%d]: read deadline was not updated correctly, delta: %v", i, fuzzyDelta)
-// 		}
+		conn := newFakeConn()
+		closed := make(chan struct{})
+		go func() {
+			writeTCPRosMessage(ctx, conn, message, resultChan)
+			closed <- struct{}{}
+		}()
 
-// 		conn.readResponse <- fakeConnReadResponse{
-// 			Buf: testCase.bytes[4:],
-// 			Err: nil,
-// 		}
+		writtenByteN := 0
+		done := false
+		maxBytes := i
 
-// 	case <-time.After(time.Second):
-// 		t.Fatalf("[%d]: expected read request", i)
-// 	}
+		for done == false {
+			select {
+			case request := <-conn.writeRequest:
+				if len(request) == 0 {
+					t.Fatalf("[%d]: unexpected zero length write request", i)
+				}
+				if writtenByteN == maxBytes {
+					t.Fatalf("[%d]: continued to request writes after cancel", i)
+				}
 
-// 	select {
-// 	case result := <-resultChan:
-// 		if result.Err != nil {
-// 			t.Fatalf("[%d]: unexpected error %v", i, result.Err)
-// 		}
-// 		if result.Buf == nil {
-// 			t.Fatalf("[%d]: result buffer is nil", i)
-// 		} else if string(result.Buf) != string(testCase.expected) {
-// 			t.Fatalf("[%d]: buffer mismatch. Result: %v, expected: %v", i, result.Buf, testCase.expected)
-// 		}
-// 	case <-time.After(time.Second):
-// 		t.Fatalf("[%d]: expected to receive result", i)
-// 	}
-// }
+				// Record the written bytes.
+				writeN := intMin(maxBytes-writtenByteN, len(request))
+				writtenByteN += writeN
+				if writtenByteN == maxBytes {
+					ctx.cancel()
+				}
+
+				conn.writeResponse <- fakeConnWriteResponse{
+					N:   writeN,
+					Err: nil,
+				}
+			case err := <-resultChan:
+				t.Fatalf("[%d]: unexpected return %v", i, err)
+			case <-closed:
+				done = true
+			case <-time.After(time.Second):
+				t.Fatalf("[%d]: expected write request", i)
+			}
+		}
+	}
+}
+
+func TestWriteTCPRosMessage_timeoutError_returnsError(t *testing.T) {
+
+	message := []byte{'a', 'b'}
+	expected := []byte{0x06, 0x00, 0x00, 0x00, 'a', 'b'}
+
+	resultChan := make(chan error)
+
+	for i := range expected {
+		ctx := newFakeContext()
+		defer ctx.cleanUp()
+
+		conn := newFakeConn()
+		closed := make(chan struct{})
+		go func() {
+			writeTCPRosMessage(ctx, conn, message, resultChan)
+			closed <- struct{}{}
+		}()
+
+		writtenByteN := 0
+		done := false
+		maxBytes := i
+
+		for done == false {
+			select {
+			case request := <-conn.writeRequest:
+				if len(request) == 0 {
+					t.Fatalf("[%d]: unexpected zero length write request", i)
+				}
+				if writtenByteN == maxBytes && maxBytes != 0 {
+					t.Fatalf("[%d]: continued to request writes after cancel", i)
+				}
+
+				// Record the written bytes.
+				writeN := intMin(maxBytes-writtenByteN, len(request))
+				writtenByteN += writeN
+
+				// Trigger error if we have met the test condition.
+				var err error
+				if writtenByteN == maxBytes {
+					err = os.ErrDeadlineExceeded
+				}
+
+				conn.writeResponse <- fakeConnWriteResponse{
+					N:   writeN,
+					Err: err,
+				}
+			case err := <-resultChan:
+				if writtenByteN != maxBytes {
+					t.Fatalf("result returned early: %v", err)
+				}
+				if err != os.ErrDeadlineExceeded {
+					t.Fatalf("unexpected error %v", err)
+				}
+				done = true
+			case <-time.After(time.Second):
+				t.Fatalf("[%d]: expected timeout error", i)
+			}
+		}
+		select {
+		case <-closed:
+		case <-time.After(time.Second):
+			t.Fatalf("[%d]: write routine did not end", i)
+		}
+	}
+}
+
+// TODO tests:
+// - timeout error during write, iterate throughout a [2,0,0,0,1,2] and timeout at each step
+// - other error?

@@ -12,6 +12,7 @@ import (
 const maximumTCPRosMessageSize uint32 = 250_000_000
 
 const tcpRosReadTimeout time.Duration = 100 * time.Millisecond
+const tcpRosWriteTimeout time.Duration = 100 * time.Millisecond
 
 // TCPRosError defines custom error types returned by readTCPRosMessage and writeTCPRosMessage. Not all errors returned will be TCPRosErrors.
 type TCPRosError int
@@ -88,13 +89,18 @@ func writeTCPRosMessage(ctx goContext.Context, conn net.Conn, msgBuf []byte, res
 
 	if err != nil {
 		resultChan <- err
-	}
-
-	_, err = conn.Write(msgBuf)
-	if err != nil {
 		return
 	}
-	resultChan <- nil
+
+	err = writeTCPRosBuf(ctx, conn, msgBuf)
+
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	resultChan <- err
 }
 
 // Local helper functions
@@ -152,20 +158,35 @@ func writeTCPRosSize(ctx goContext.Context, conn net.Conn, size uint32) error {
 	binary.Write(buff, binary.LittleEndian, size)
 	index := 0
 
-	for {
+	for index < 4 {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
+			conn.SetWriteDeadline(time.Now().Add(tcpRosWriteTimeout))
 			n, err := conn.Write(buff.Bytes()[index:])
 			if err != nil {
 				return err
 			}
-			// TODO: Condition is still here...  need to extend time when err is not timeout
 			index += n
-			if index >= 4 {
-				return nil
-			}
 		}
 	}
+	return nil
+}
+
+func writeTCPRosBuf(ctx goContext.Context, conn net.Conn, buf []byte) error {
+	for len(buf) > 0 {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			conn.SetWriteDeadline(time.Now().Add(tcpRosWriteTimeout))
+			n, err := conn.Write(buf)
+			if err != nil {
+				return err
+			}
+			buf = buf[n:]
+		}
+	}
+	return nil
 }
