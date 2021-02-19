@@ -381,6 +381,7 @@ func (node *defaultNode) publisherUpdate(callerID string, topic string, publishe
 		code = APIStatusSuccess
 		message = "Success"
 	}
+	node.logger.Debug("Slave API publisherUpdate() returning now!.")
 	return buildRosAPIResult(code, message, 0), nil
 }
 

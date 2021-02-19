@@ -99,10 +99,12 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 					logger.Warn(sub.topic, " : rosgo does not support protocol: ", name)
 				}
 			}
+			logger.Debug(sub.topic, " : End of Receive pubListChan")
 
 		case callback := <-sub.addCallbackChan:
 			logger.Debug(sub.topic, " : Receive addCallbackChan")
 			sub.callbacks = append(sub.callbacks, callback)
+			logger.Debug(sub.topic, " : End of Receive addCallbackChan")
 
 		case msgEvent := <-sub.msgChan:
 			// Pop received message then bind callbacks and enqueue to the job channel.
@@ -132,12 +134,14 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 				logger.Debug(sub.topic, " : Callback job timed out.")
 			}
 			logger.Debug("Callback job enqueued.")
+			logger.Debug(sub.topic, " : End of Receive msgChan")
 
 		case pubURI := <-sub.disconnectedChan:
 			logger.Debugf("Connection to %s was disconnected.", pubURI)
 			pub := sub.uri2pub[pubURI]
 			delete(sub.subscriptionChans, pub)
 			delete(sub.uri2pub, pubURI)
+			logger.Debugf("End of Connection to %s was disconnected.", pubURI)
 
 		case <-sub.shutdownChan:
 			fmt.Println("*************** Received on sub.shutdownChan!!!!!!!!!! **********")
@@ -154,9 +158,11 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			return
 
 		case enabled := <-enableChan:
+			logger.Debug("Received on enableChan")
 			for _, subscription := range sub.subscriptionChans {
 				subscription.enableMessages <- enabled
 			}
+			logger.Debug("End of Received on enableChan")
 		}
 	}
 }
