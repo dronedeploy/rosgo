@@ -61,7 +61,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 	for {
 		select {
 		case list := <-sub.pubListChan:
-			logger.Debug(sub.topic, " : Receive pubListChan")
+			logger.Error(sub.topic, " : Receive pubListChan")
 			deadPubs := setDifference(sub.pubList, list)
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = list
@@ -74,7 +74,9 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 
 			for _, pub := range newPubs {
 				protocols := []interface{}{[]interface{}{"TCPROS"}}
+				logger.Error("about to call ros api")
 				result, err := callRosAPI(pub, "requestTopic", nodeID, sub.topic, protocols)
+				logger.Errorf("call ros api: result: %+v, err: %v", result, err)
 				if err != nil {
 					logger.Error(sub.topic, " : ", err)
 					continue
@@ -94,12 +96,13 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 					enableMessagesChan := make(chan bool)
 					sub.uri2pub[uri] = pub
 					sub.subscriptionChans[pub] = subscriptionChannels{quit: quitChan, enableMessages: enableMessagesChan}
+					logger.Error("about to startRemotePublisherConn")
 					startRemotePublisherConn(log, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, enableMessagesChan, quitChan, sub.disconnectedChan)
 				} else {
 					logger.Warn(sub.topic, " : rosgo does not support protocol: ", name)
 				}
 			}
-			logger.Debug(sub.topic, " : End of Receive pubListChan")
+			logger.Error(sub.topic, " : End of Receive pubListChan")
 
 		case callback := <-sub.addCallbackChan:
 			logger.Debug(sub.topic, " : Receive addCallbackChan")
