@@ -70,12 +70,9 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 				logger.Errorf("pub: %+v", pub)
 				deadSubscription := sub.subscriptionChans[pub]
 				logger.Errorf("deadSubscription: %+v", deadSubscription)
-				logger.Error("about to send on deadSubscription.quit")
-				select {
-				case deadSubscription.quit <- struct{}{}:
-				default:
-				}
-				logger.Error("successfully sent on deadSubscription.quit")
+				logger.Error("NOT about to send on deadSubscription.quit")
+				//deadSubscription.quit <- struct{}{}
+				logger.Error("NOT successfully sent on deadSubscription.quit")
 				delete(sub.subscriptionChans, pub)
 				logger.Error("successfully deleted pub: %s, from sub.subscriptionChans: %+v", pub, sub.subscriptionChans)
 			}
