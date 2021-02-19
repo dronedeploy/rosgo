@@ -65,11 +65,16 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			deadPubs := setDifference(sub.pubList, list)
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = list
-
+			logger.Errorf("about to range over deadPubs: %+v", deadPubs)
 			for _, pub := range deadPubs {
+				logger.Errorf("pub: %+v", pub)
 				deadSubscription := sub.subscriptionChans[pub]
+				logger.Errorf("deadSubscription: %+v", deadSubscription)
+				logger.Error("about to send on deadSubscription.quit")
 				deadSubscription.quit <- struct{}{}
+				logger.Error("successfully sent on deadSubscription.quit")
 				delete(sub.subscriptionChans, pub)
+				logger.Error("successfully deleted pub: %s, from sub.subscriptionChans: %+v", pub, sub.subscriptionChans)
 			}
 
 			for _, pub := range newPubs {
