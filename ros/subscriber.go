@@ -190,11 +190,8 @@ func setDifference(lhs []string, rhs []string) []string {
 }
 
 func (sub *defaultSubscriber) Shutdown() {
-	fmt.Println("trying to send to sub.shutdownChan!!!")
 	sub.shutdownChan <- struct{}{}
-	fmt.Println("sent to sub.shutdownChan!!! Now waiting to hear back")
 	<-sub.shutdownChan
-	fmt.Println("heard back, returning!")
 }
 
 func (sub *defaultSubscriber) GetNumPublishers() int {
