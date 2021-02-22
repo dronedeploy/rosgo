@@ -97,7 +97,7 @@ func (s *defaultSubscription) run(log *modular.ModuleLogger) {
 		}
 
 		// Reading from publisher, this will only return when our connection fails.
-		connectionFailureMode := s.readFromPublisher(ctx, conn)
+		connectionFailureMode := s.readFromPublisher(ctx, conn, log)
 
 		// Under healthy conditions, we don't get here. Always close the connection, then handle the returned connection state.
 		conn.Close()
@@ -280,8 +280,9 @@ func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, 
 }
 
 // readFromPublisher maintains a connection with a publisher. When a connection is stable, it will loop until either the publisher or subscriber disconnects.
-func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn) connectionFailureMode {
+func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log *modular.ModuleLogger) connectionFailureMode {
 	enabled := true
+	logger := *log
 
 	// TCPROS reader setup.
 	ctx, cancel := goContext.WithCancel(ctx)
@@ -316,6 +317,7 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 				case s.messageChan <- messageEvent{bytes: tcpResult.Buf, event: s.event}:
 				case <-time.After(time.Duration(30) * time.Millisecond):
 					// Dropping message.
+					logger.WithFields(logrus.Fields{"topic": s.topic}).Error("dropping subscribed message due to timeout")
 				}
 			}
 		case readOutOfSync, readTimeout:

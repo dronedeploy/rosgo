@@ -66,7 +66,10 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = list
 			for _, pub := range deadPubs {
-				delete(sub.subscriptionChans, pub)
+				if channels, ok := sub.subscriptionChans[pub]; ok {
+					close(channels.quit)
+					delete(sub.subscriptionChans, pub)
+				}
 			}
 
 			for _, pub := range newPubs {
