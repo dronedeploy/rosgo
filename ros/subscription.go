@@ -3,7 +3,6 @@ package ros
 import (
 	"bytes"
 	goContext "context"
-	"encoding/binary"
 	"io"
 	"net"
 	"time"
@@ -330,36 +329,6 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 			return readFailure
 		}
 	}
-}
-
-// readSize reads the number of bytes to expect in the message payload. The structure of a ROS message is: [SIZE|PAYLOAD] where size is a uint32.
-func readSize(r io.Reader) (int, readResult) {
-	var msgSize uint32
-
-	err := binary.Read(r, binary.LittleEndian, &msgSize)
-	if err != nil {
-		return 0, errorToReadResult(err)
-	}
-	// Check that our message size is in a range of possible sizes for a ros message.
-	if msgSize < 256000000 {
-		return int(msgSize), readOk
-	}
-	// A large number of bytes is an indication of a transport error - we assume we are out of sync.
-	return 0, readOutOfSync
-}
-
-// readRawMessage reads ROS message bytes from the io.Reader.
-func (s *defaultSubscription) readRawMessage(r io.Reader, size int) ([]byte, readResult) {
-	// Allocate a new slice for this raw message. We need to allocate everytime because we aren't guaranteed that buffer will be processed immediately.
-	buffer := make([]byte, size)
-
-	// Read the full buffer; we expect this call to timeout if the read takes too long.
-	_, err := io.ReadFull(r, buffer)
-	if err != nil {
-		return buffer, errorToReadResult(err)
-	}
-
-	return buffer, readOk
 }
 
 // errorToReadResult converts errors to readResult to be handled further up the callstack.

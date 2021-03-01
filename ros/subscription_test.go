@@ -2,7 +2,6 @@ package ros
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"net"
 	"testing"
@@ -68,92 +67,6 @@ func (r *testReader) Read(buf []byte) (n int, err error) {
 }
 
 // Testing starts here.
-
-// Read size tests.
-
-func TestSubscription_ReadSize(t *testing.T) {
-	type testCase struct {
-		buffer   []byte
-		expected int
-	}
-
-	testCases := []testCase{
-		{[]byte{0x00, 0x00, 0x00, 0x00}, 0},
-		{[]byte{0x01, 0x00, 0x00, 0x00}, 1},
-		{[]byte{0x0F, 0x00, 0x00, 0x00}, 15},
-		{[]byte{0x00, 0x01, 0x00, 0x00}, 256},
-		{[]byte{0xa1, 0x86, 0x01, 0x00}, 100001},
-	}
-
-	for _, tc := range testCases {
-		reader := testReader{tc.buffer, 4, nil}
-		n, res := readSize(&reader)
-		if res != readOk {
-			t.Fatalf("Expected read result %d, but got %d", readOk, res)
-		}
-		if n != tc.expected {
-			t.Fatalf("ReadSize failed, expected %d, got %d", tc.expected, n)
-		}
-
-	}
-}
-
-// Read size error cases.
-func TestSubscription_ReadSize_TooLarge(t *testing.T) {
-	reader := testReader{[]byte{0x00, 0x00, 0x00, 0x80}, 4, nil}
-	_, res := readSize(&reader)
-	if res != readOutOfSync {
-		t.Fatalf("Expected read result %d, but got %d", readOutOfSync, res)
-	}
-}
-
-func TestSubscription_ReadSize_disconnected(t *testing.T) {
-	reader := testReader{[]byte{}, 0, io.EOF}
-	_, res := readSize(&reader)
-	if res != remoteDisconnected {
-		t.Fatalf("Expected read result %d, but got %d", remoteDisconnected, res)
-	}
-}
-
-func TestSubscription_ReadSize_otherError(t *testing.T) {
-	reader := testReader{[]byte{}, 0, errors.New("MysteryError")}
-	_, res := readSize(&reader)
-	if res != readFailed {
-		t.Fatalf("Expected read result %d, but got %d", readFailed, res)
-	}
-}
-
-// Read Raw Data tests.
-
-// Verify basic buffer reading works correctly.
-func TestSubscription_ReadRawData_ReadData(t *testing.T) {
-	subscription := newTestSubscription("testUri")
-
-	reader := testReader{[]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 10, nil}
-
-	buf, res := subscription.readRawMessage(&reader, 4)
-	if res != readOk {
-		t.Fatalf("Expected read result %d, but got %d", readOk, res)
-	}
-
-	for i := 0; i < len(buf); i++ {
-		if buf[i] != reader.buffer[i] {
-			t.Fatalf("Expected read buf[%d] = %x, but got %x", i, reader.buffer[i], buf[i])
-		}
-	}
-}
-
-// Verify disconnection handling.
-func TestSubscription_ReadRawData_disconnected(t *testing.T) {
-	subscription := newTestSubscription("testUri")
-
-	reader := testReader{[]byte{}, 0, io.EOF}
-
-	_, res := subscription.readRawMessage(&reader, 4)
-	if res != remoteDisconnected {
-		t.Fatalf("Expected read result %d, but got %d", remoteDisconnected, res)
-	}
-}
 
 // Create a new subscription and pass headers still works when topic isn't provided by the publisher.
 func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
