@@ -2,6 +2,7 @@ package ros
 
 import (
 	"bytes"
+	goContext "context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -16,7 +17,7 @@ type messageEvent struct {
 }
 
 type subscriptionChannels struct {
-	quit           chan struct{}
+	cancel         goContext.CancelFunc
 	enableMessages chan bool
 }
 
@@ -51,6 +52,8 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 }
 
 func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log *modular.ModuleLogger) {
+	ctx, cancel := goContext.WithCancel(goContext.Background())
+	defer cancel()
 	logger := *log
 	logger.Debugf("Subscriber goroutine for %s started.", sub.topic)
 	wg.Add(1)
@@ -66,8 +69,8 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = list
 			for _, pub := range deadPubs {
-				if channels, ok := sub.subscriptionChans[pub]; ok {
-					close(channels.quit)
+				if subChans, ok := sub.subscriptionChans[pub]; ok {
+					subChans.cancel()
 					delete(sub.subscriptionChans, pub)
 				}
 			}
@@ -87,14 +90,16 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 
 				name := protocolParams[0].(string)
 				if name == "TCPROS" {
+
 					addr := protocolParams[1].(string)
 					port := protocolParams[2].(int32)
 					uri := fmt.Sprintf("%s:%d", addr, port)
-					quitChan := make(chan struct{})
 					enableMessagesChan := make(chan bool)
 					sub.uri2pub[uri] = pub
-					sub.subscriptionChans[pub] = subscriptionChannels{quit: quitChan, enableMessages: enableMessagesChan}
-					startRemotePublisherConn(log, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, enableMessagesChan, quitChan, sub.disconnectedChan)
+					subCtx, subCancel := goContext.WithCancel(ctx)
+					defer subCancel()
+					sub.subscriptionChans[pub] = subscriptionChannels{cancel: subCancel, enableMessages: enableMessagesChan}
+					startRemotePublisherConn(subCtx, log, &TCPRosNetDialer{}, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, enableMessagesChan, sub.disconnectedChan)
 				} else {
 					logger.Warn(sub.topic, " : rosgo does not support protocol: ", name)
 				}
@@ -135,16 +140,18 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 
 		case pubURI := <-sub.disconnectedChan:
 			logger.Debugf("Connection to %s was disconnected.", pubURI)
-			pub := sub.uri2pub[pubURI]
-			delete(sub.subscriptionChans, pub)
-			delete(sub.uri2pub, pubURI)
+			if pub, ok := sub.uri2pub[pubURI]; ok {
+				if deadSubChans, ok := sub.subscriptionChans[pub]; ok {
+					deadSubChans.cancel()
+					delete(sub.subscriptionChans, pub)
+				}
+				delete(sub.uri2pub, pubURI)
+			}
 
 		case <-sub.shutdownChan:
 			// Shutdown subscription goroutine.
 			logger.Debug(sub.topic, " : Receive shutdownChan")
-			for _, closeChan := range sub.subscriptionChans {
-				close(closeChan.quit)
-			}
+			cancel() // Shutdown context
 			_, err := callRosAPI(masterURI, "unregisterSubscriber", nodeID, sub.topic, nodeAPIURI)
 			if err != nil {
 				logger.Warn(sub.topic, " : ", err)
@@ -161,14 +168,15 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 }
 
 // startRemotePublisherConn creates a subscription to a remote publisher and runs it.
-func startRemotePublisherConn(log *modular.ModuleLogger,
+func startRemotePublisherConn(ctx goContext.Context, log *modular.ModuleLogger,
+	dialer TCPRosDialer,
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	msgChan chan messageEvent,
 	enableMessagesChan chan bool,
-	quitChan chan struct{},
 	disconnectedChan chan string) {
-	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, enableMessagesChan, quitChan, disconnectedChan)
-	sub.start(log)
+	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, enableMessagesChan, disconnectedChan)
+	sub.dialer = dialer
+	sub.startWithContext(ctx, log)
 }
 
 func setDifference(lhs []string, rhs []string) []string {

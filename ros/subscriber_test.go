@@ -17,8 +17,8 @@ func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 	topic := "/test/topic"
 	msgType := testMessageType{topic}
 
-	l, conn, _, _, _, disconnectedChan := setupRemotePublisherConnTest(t)
-	defer l.Close()
+	ctx, conn, _, _, disconnectedChan := setupRemotePublisherConnTest(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, msgType) // Test helper from subscription_test.go.
@@ -36,7 +36,6 @@ func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 	}
 
 	conn.Close()
-	l.Close()
 	select {
 	case <-disconnectedChan:
 		return
@@ -45,17 +44,17 @@ func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 	}
 }
 
-func TestRemotePublisherConn_ClosesFromSignal(t *testing.T) {
+func TestRemotePublisherConn_ClosesFromContext(t *testing.T) {
 
-	l, conn, _, _, quitChan, _ := setupRemotePublisherConnTest(t)
-	defer l.Close()
+	ctx, conn, _, _, _ := setupRemotePublisherConnTest(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	connectToSubscriber(t, conn)
 	<-time.After(time.Duration(50 * time.Millisecond))
 
 	// Signal to close.
-	quitChan <- struct{}{}
+	ctx.cancel()
 	<-time.After(time.Duration(50 * time.Millisecond))
 
 	// Check that buffer closed.
@@ -70,8 +69,8 @@ func TestRemotePublisherConn_ClosesFromSignal(t *testing.T) {
 
 func TestRemotePublisherConn_RemoteReceivesData(t *testing.T) {
 
-	l, conn, msgChan, _, _, disconnectedChan := setupRemotePublisherConnTest(t)
-	defer l.Close()
+	ctx, conn, msgChan, _, disconnectedChan := setupRemotePublisherConnTest(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	connectToSubscriber(t, conn)
@@ -83,7 +82,6 @@ func TestRemotePublisherConn_RemoteReceivesData(t *testing.T) {
 	sendMessageAndReceiveInChannel(t, conn, msgChan, []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8})
 
 	conn.Close()
-	l.Close()
 	select {
 	case channelName := <-disconnectedChan:
 		t.Log(channelName)
@@ -124,35 +122,30 @@ func TestSubscriber_Shutdown(t *testing.T) {
 }
 
 // setupRemotePublisherConnTest establishes all init values and kicks off the start function.
-func setupRemotePublisherConnTest(t *testing.T) (net.Listener, net.Conn, chan messageEvent, chan bool,
-	chan struct{}, chan string) {
+func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan messageEvent, chan bool, chan string) {
+	pubConn, subConn := net.Pipe()
+	pubURI := "fakeUri:12345"
+	testDialer := &TCPRosDialerFake{
+		conn: subConn,
+		err:  nil,
+		uri:  "",
+	}
+	ctx := newFakeContext()
+
 	logger := modular.NewRootLogger(logrus.New())
 	topic := "/test/topic"
 	nodeID := "testNode"
 	msgChan := make(chan messageEvent)
 	enableChan := make(chan bool)
-	quitChan := make(chan struct{})
 	disconnectedChan := make(chan string)
 	msgType := testMessageType{}
 
 	log := logger.GetModuleLogger()
 	log.SetLevel(logrus.InfoLevel)
 
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	startRemotePublisherConn(ctx, &log, testDialer, pubURI, topic, msgType, nodeID, msgChan, enableChan, disconnectedChan)
 
-	pubURI := l.Addr().String()
-
-	startRemotePublisherConn(&log, pubURI, topic, msgType, nodeID, msgChan, enableChan, quitChan, disconnectedChan)
-
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return l, conn, msgChan, enableChan, quitChan, disconnectedChan
+	return ctx, pubConn, msgChan, enableChan, disconnectedChan
 }
 
 // connectToSubscriber connects a net.Conn object to a subscriber and emulates the publisher header exchange. Puts the subscriber in a state where it is ready to receive messages.

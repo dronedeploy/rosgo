@@ -228,7 +228,7 @@ func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
 
-	close(subscription.requestStopChan)
+	ctx.cancel()
 
 	// Expect the Subscription has closed the connection.
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
@@ -318,12 +318,12 @@ func TestSubscription_FlowControl(t *testing.T) {
 
 // Request stop shuts down an active connection.
 func TestSubscription_RequestStop(t *testing.T) {
-	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	ctx, conn, _ := createAndConnectSubscriptionToPublisher(t)
 	defer ctx.cleanUp()
 	defer conn.Close()
 
-	// Close the stop channel. Expect this to shutdown the subscription.
-	close(subscription.requestStopChan)
+	// Cancel the context
+	ctx.cancel()
 
 	// Check the connection is closed by the subscription.
 	buffer := make([]byte, 1)
@@ -344,7 +344,6 @@ func newTestSubscription(pubURI string) *defaultSubscription {
 	topic := "/test/topic"
 	nodeID := "testNode"
 	messageChan := make(chan messageEvent)
-	requestStopChan := make(chan struct{})
 	remoteDisconnectedChan := make(chan string)
 	enableChan := make(chan bool)
 	msgType := testMessageType{topic}
@@ -353,7 +352,6 @@ func newTestSubscription(pubURI string) *defaultSubscription {
 		pubURI, topic, msgType, nodeID,
 		messageChan,
 		enableChan,
-		requestStopChan,
 		remoteDisconnectedChan)
 }
 

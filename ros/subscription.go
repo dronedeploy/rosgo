@@ -19,8 +19,7 @@ type defaultSubscription struct {
 	nodeID                 string
 	messageChan            chan messageEvent
 	enableChan             chan bool
-	requestStopChan        chan struct{} // Inbound signal for subscription to disconnect.
-	remoteDisconnectedChan chan string   // Outbound signal to indicate a disconnected channel.
+	remoteDisconnectedChan chan string // Outbound signal to indicate a disconnected channel.
 	event                  MessageEvent
 	dialer                 TCPRosDialer
 }
@@ -30,7 +29,6 @@ func newDefaultSubscription(
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	messageChan chan messageEvent,
 	enableChan chan bool,
-	requestStopChan chan struct{},
 	remoteDisconnectedChan chan string) *defaultSubscription {
 
 	return &defaultSubscription{
@@ -40,7 +38,6 @@ func newDefaultSubscription(
 		nodeID:                 nodeID,
 		messageChan:            messageChan,
 		enableChan:             enableChan,
-		requestStopChan:        requestStopChan,
 		remoteDisconnectedChan: remoteDisconnectedChan,
 		event:                  MessageEvent{"", time.Time{}, nil},
 		dialer:                 &TCPRosNetDialer{},
@@ -158,7 +155,7 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 
 	// Return if stop requested.
 	select {
-	case <-s.requestStopChan:
+	case <-ctx.Done():
 		return false
 	default:
 	}
@@ -172,7 +169,7 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 
 	// Return if stop requested.
 	select {
-	case <-s.requestStopChan:
+	case <-ctx.Done():
 		return false
 	default:
 	}
@@ -225,8 +222,7 @@ func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn,
 	go writeTCPRosMessage(ctx, *conn, headerWriter.Bytes()[4:], writeResultChan)
 
 	select {
-	case <-s.requestStopChan:
-		cancel()
+	case <-ctx.Done():
 		return nil
 	case err := <-writeResultChan:
 		return err
@@ -252,8 +248,7 @@ func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, 
 		}
 		headerReader = bytes.NewReader(result.Buf)
 		headerSize = uint32(len(result.Buf))
-	case <-s.requestStopChan:
-		cancel()
+	case <-ctx.Done():
 		return nil, nil
 	}
 
@@ -298,8 +293,7 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 			case enabled = <-s.enableChan:
 			case tcpResult = <-readResultChan:
 				readComplete = true
-			case <-s.requestStopChan:
-				cancel()
+			case <-ctx.Done():
 				return stopRequested
 			}
 		}
