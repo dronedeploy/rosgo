@@ -154,8 +154,8 @@ func TestSubscription_Dial_CanCancel(t *testing.T) {
 
 // Create a new subscription and pass headers still works when topic isn't provided by the publisher.
 func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectToSubscription(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
@@ -178,7 +178,6 @@ func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
 	}
 
 	conn.Close()
-	l.Close()
 	select {
 	case <-subscription.remoteDisconnectedChan:
 		return
@@ -189,8 +188,8 @@ func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
 
 // Subscription closes the connection when it receives an invalid response header.
 func TestSubscription_HeaderExchange_InvalidResponse(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectToSubscription(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
@@ -218,14 +217,13 @@ func TestSubscription_HeaderExchange_InvalidResponse(t *testing.T) {
 	}
 
 	conn.Close()
-	l.Close()
 }
 
 // Subscription closes when stop channel is closed during header exchange.
 func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.T) {
 
-	l, conn, subscription := createAndConnectToSubscription(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectToSubscription(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
@@ -240,13 +238,12 @@ func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.
 	}
 
 	conn.Close()
-	l.Close()
 }
 
 // Valid messages are forwarded from the publisher TCP stream by the subscription.
 func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	// Send something!
@@ -256,7 +253,6 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8})
 
 	conn.Close()
-	l.Close()
 	select {
 	case channelName := <-subscription.remoteDisconnectedChan:
 		t.Log(channelName)
@@ -268,8 +264,8 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 
 // Drip feed a message
 func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	// Send data through the drip feed.
@@ -278,7 +274,6 @@ func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
 	receiveMessageInChannel(t, subscription.messageChan, data)
 
 	conn.Close()
-	l.Close()
 	select {
 	case channelName := <-subscription.remoteDisconnectedChan:
 		t.Log(channelName)
@@ -290,9 +285,9 @@ func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
 
 // The subscription adheres to the flow control policy.
 func TestSubscription_FlowControl(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
 	defer conn.Close()
-	defer l.Close()
+	defer ctx.cleanUp()
 
 	// Send something - channel enabled.
 	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23})
@@ -312,7 +307,6 @@ func TestSubscription_FlowControl(t *testing.T) {
 	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23, 0x43})
 
 	conn.Close()
-	l.Close()
 	select {
 	case channelName := <-subscription.remoteDisconnectedChan:
 		t.Log(channelName)
@@ -324,8 +318,8 @@ func TestSubscription_FlowControl(t *testing.T) {
 
 // Request stop shuts down an active connection.
 func TestSubscription_RequestStop(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	// Close the stop channel. Expect this to shutdown the subscription.
@@ -502,33 +496,32 @@ func dripFeedMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
 	}
 }
 
-// createAndConnectToSubscription creates a new subscription struct and prepares a TCPROS session where we are ready to exchange messages.
-func createAndConnectToSubscription(t *testing.T) (net.Listener, net.Conn, *defaultSubscription) {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
+// createAndConnectToSubscription creates a new subscription struct and prepares a TCP session.
+func createAndConnectToSubscription(t *testing.T) (*fakeContext, net.Conn, *defaultSubscription) {
+	pubConn, subConn := net.Pipe()
+	pubURI := "fakeUri:12345"
+	testDialer := &TCPRosDialerFake{
+		conn: subConn,
+		err:  nil,
+		uri:  "",
 	}
-	pubURI := l.Addr().String()
 
 	subscription := newTestSubscription(pubURI)
+	subscription.dialer = testDialer
 
 	logger := modular.NewRootLogger(logrus.New())
 	log := logger.GetModuleLogger()
 
-	subscription.start(&log)
+	ctx := newFakeContext()
+	subscription.startWithContext(ctx, &log)
 
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return l, conn, subscription
+	return ctx, pubConn, subscription
 }
 
 // createAndConnectSubscriptionToPublisher creates a new subscription struct and prepares a TCPROS session where we are ready to exchange messages.
-func createAndConnectSubscriptionToPublisher(t *testing.T) (net.Listener, net.Conn, *defaultSubscription) {
-	l, conn, subscription := createAndConnectToSubscription(t)
+func createAndConnectSubscriptionToPublisher(t *testing.T) (*fakeContext, net.Conn, *defaultSubscription) {
+	ctx, conn, subscription := createAndConnectToSubscription(t)
 	doHeaderExchangeAsPublisher(t, conn, subscription)
 
-	return l, conn, subscription
+	return ctx, conn, subscription
 }
