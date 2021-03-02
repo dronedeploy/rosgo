@@ -2,6 +2,7 @@ package ros
 
 import (
 	"bytes"
+	goContext "context"
 	"errors"
 	"io"
 	"net"
@@ -67,98 +68,94 @@ func (r *testReader) Read(buf []byte) (n int, err error) {
 	return
 }
 
+// Fake dialer used to create test connections
+type TCPRosDialerFake struct {
+	conn net.Conn
+	err  error
+	uri  string
+}
+
+// Dial fake impelementation for testing.
+func (d *TCPRosDialerFake) Dial(_ goContext.Context, uri string) (net.Conn, error) {
+	d.uri = uri
+	return d.conn, d.err
+}
+
+var _ TCPRosDialer = &TCPRosNetDialer{}
+
 // Testing starts here.
 
-// Read size tests.
-
-func TestSubscription_ReadSize(t *testing.T) {
-	type testCase struct {
-		buffer   []byte
-		expected int
+// Use fake dial to ensure we dial the correct uri.
+func TestSubscription_Dial_WithError(t *testing.T) {
+	pubURI := "testuri:12345"
+	subscription := newTestSubscription(pubURI)
+	testDialer := &TCPRosDialerFake{
+		conn: nil,
+		err:  errors.New("connectionFail"),
+		uri:  "",
 	}
+	subscription.dialer = testDialer
 
-	testCases := []testCase{
-		{[]byte{0x00, 0x00, 0x00, 0x00}, 0},
-		{[]byte{0x01, 0x00, 0x00, 0x00}, 1},
-		{[]byte{0x0F, 0x00, 0x00, 0x00}, 15},
-		{[]byte{0x00, 0x01, 0x00, 0x00}, 256},
-		{[]byte{0xa1, 0x86, 0x01, 0x00}, 100001},
-	}
+	logger := modular.NewRootLogger(logrus.New())
+	log := logger.GetModuleLogger()
 
-	for _, tc := range testCases {
-		reader := testReader{tc.buffer, 4, nil}
-		n, res := readSize(&reader)
-		if res != readOk {
-			t.Fatalf("Expected read result %d, but got %d", readOk, res)
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+
+	closed := make(chan struct{})
+	go func() {
+		subscription.run(ctx, &log)
+		closed <- struct{}{}
+	}()
+
+	select {
+	case <-closed:
+		if testDialer.uri != pubURI {
+			t.Fatalf("dialer was not sent the correct uri, got %s", testDialer.uri)
 		}
-		if n != tc.expected {
-			t.Fatalf("ReadSize failed, expected %d, got %d", tc.expected, n)
-		}
-
+		return
+	case <-time.After(time.Second):
+		t.Fatalf("took too long for client cancel dial")
 	}
 }
 
-// Read size error cases.
-func TestSubscription_ReadSize_TooLarge(t *testing.T) {
-	reader := testReader{[]byte{0x00, 0x00, 0x00, 0x80}, 4, nil}
-	_, res := readSize(&reader)
-	if res != readOutOfSync {
-		t.Fatalf("Expected read result %d, but got %d", readOutOfSync, res)
+// Test to verify we can cancel the context on a hanging dial.
+func TestSubscription_Dial_CanCancel(t *testing.T) {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
 	}
-}
+	defer l.Close()
+	pubURI := l.Addr().String() // ensure we get a free port
 
-func TestSubscription_ReadSize_disconnected(t *testing.T) {
-	reader := testReader{[]byte{}, 0, io.EOF}
-	_, res := readSize(&reader)
-	if res != remoteDisconnected {
-		t.Fatalf("Expected read result %d, but got %d", remoteDisconnected, res)
-	}
-}
+	subscription := newTestSubscription(pubURI)
 
-func TestSubscription_ReadSize_otherError(t *testing.T) {
-	reader := testReader{[]byte{}, 0, errors.New("MysteryError")}
-	_, res := readSize(&reader)
-	if res != readFailed {
-		t.Fatalf("Expected read result %d, but got %d", readFailed, res)
-	}
-}
+	logger := modular.NewRootLogger(logrus.New())
+	log := logger.GetModuleLogger()
 
-// Read Raw Data tests.
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
 
-// Verify basic buffer reading works correctly.
-func TestSubscription_ReadRawData_ReadData(t *testing.T) {
-	subscription := newTestSubscription("testUri")
+	closed := make(chan struct{})
+	go func() {
+		subscription.run(ctx, &log)
+		closed <- struct{}{}
+	}()
 
-	reader := testReader{[]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 10, nil}
+	ctx.cancel()
 
-	buf, res := subscription.readRawMessage(&reader, 4)
-	if res != readOk {
-		t.Fatalf("Expected read result %d, but got %d", readOk, res)
-	}
-
-	for i := 0; i < len(buf); i++ {
-		if buf[i] != reader.buffer[i] {
-			t.Fatalf("Expected read buf[%d] = %x, but got %x", i, reader.buffer[i], buf[i])
-		}
-	}
-}
-
-// Verify disconnection handling.
-func TestSubscription_ReadRawData_disconnected(t *testing.T) {
-	subscription := newTestSubscription("testUri")
-
-	reader := testReader{[]byte{}, 0, io.EOF}
-
-	_, res := subscription.readRawMessage(&reader, 4)
-	if res != remoteDisconnected {
-		t.Fatalf("Expected read result %d, but got %d", remoteDisconnected, res)
+	select {
+	case <-closed:
+		return
+	case <-time.After(time.Second):
+		t.Fatalf("took too long for client cancel dial")
 	}
 }
 
 // Create a new subscription and pass headers still works when topic isn't provided by the publisher.
 func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectToSubscription(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
@@ -181,7 +178,6 @@ func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
 	}
 
 	conn.Close()
-	l.Close()
 	select {
 	case <-subscription.remoteDisconnectedChan:
 		return
@@ -192,8 +188,8 @@ func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
 
 // Subscription closes the connection when it receives an invalid response header.
 func TestSubscription_HeaderExchange_InvalidResponse(t *testing.T) {
-	l, conn, subscription := createAndConnectToSubscription(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectToSubscription(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
@@ -221,19 +217,18 @@ func TestSubscription_HeaderExchange_InvalidResponse(t *testing.T) {
 	}
 
 	conn.Close()
-	l.Close()
 }
 
 // Subscription closes when stop channel is closed during header exchange.
 func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.T) {
 
-	l, conn, subscription := createAndConnectToSubscription(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectToSubscription(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	readAndVerifySubscriberHeader(t, conn, subscription.msgType)
 
-	close(subscription.requestStopChan)
+	ctx.cancel()
 
 	// Expect the Subscription has closed the connection.
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
@@ -243,13 +238,12 @@ func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.
 	}
 
 	conn.Close()
-	l.Close()
 }
 
 // Valid messages are forwarded from the publisher TCP stream by the subscription.
-func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer l.Close()
+func TestSubscription_ForwardsMessages(t *testing.T) {
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	// Send something!
@@ -259,7 +253,30 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8})
 
 	conn.Close()
-	l.Close()
+	select {
+	case channelName := <-subscription.remoteDisconnectedChan:
+		t.Log(channelName)
+		return
+	case <-time.After(time.Duration(100) * time.Millisecond):
+		t.Fatalf("Took too long for client to disconnect from publisher")
+	}
+}
+
+// Prioritizes new messages over old messages.
+func TestSubscription_PrioritizesLatestMessage(t *testing.T) {
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
+	defer conn.Close()
+
+	staleBuffer := []byte{0x12, 0x23}
+	newBuffer := []byte{0x1, 0x2, 0x3}
+
+	sendMessageBytes(t, conn, staleBuffer)
+	go sendMessageBytes(t, conn, newBuffer)
+	<-time.After(1 * time.Millisecond)
+	receiveMessageInChannel(t, subscription.messageChan, newBuffer)
+
+	conn.Close()
 	select {
 	case channelName := <-subscription.remoteDisconnectedChan:
 		t.Log(channelName)
@@ -271,8 +288,8 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 
 // Drip feed a message
 func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer l.Close()
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
 	// Send data through the drip feed.
@@ -281,7 +298,6 @@ func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
 	receiveMessageInChannel(t, subscription.messageChan, data)
 
 	conn.Close()
-	l.Close()
 	select {
 	case channelName := <-subscription.remoteDisconnectedChan:
 		t.Log(channelName)
@@ -291,52 +307,36 @@ func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
 	}
 }
 
-// The subscription adheres to the flow control policy.
-func TestSubscription_FlowControl(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer conn.Close()
-	defer l.Close()
-
-	// Send something - channel enabled.
-	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-
-	// Send something - channel disabled.
-	subscription.enableChan <- false
-	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-
-	// Send something - channel enabled.
-	subscription.enableChan <- true
-	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23, 0x43})
-
-	// Send something - channel disabled.
-	subscription.enableChan <- false
-	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23, 0x43})
-
-	conn.Close()
-	l.Close()
-	select {
-	case channelName := <-subscription.remoteDisconnectedChan:
-		t.Log(channelName)
-		return
-	case <-time.After(time.Duration(100) * time.Millisecond):
-		t.Fatalf("Took too long for client to disconnect from publisher")
-	}
-}
-
-// Request stop shuts down an active connection.
-func TestSubscription_RequestStop(t *testing.T) {
-	l, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer l.Close()
+func TestSubscription_CancelAtStart(t *testing.T) {
+	ctx, conn, _ := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
 	defer conn.Close()
 
-	// Close the stop channel. Expect this to shutdown the subscription.
-	close(subscription.requestStopChan)
+	ctx.cancel() // Cancel the context.
 
 	// Check the connection is closed by the subscription.
 	buffer := make([]byte, 1)
-	deadlineDuration := 5 * time.Second                // Subscriptions only check the stop request every second, so our close check needs to be longer.
+	deadlineDuration := 5 * time.Millisecond
+	conn.SetDeadline(time.Now().Add(deadlineDuration)) // Deadline stops this running forever if the connection wasn't closed.
+	_, err := conn.Read(buffer)
+
+	if err != io.EOF {
+		t.Fatalf("Expected subscription to close connection, err: %s", err)
+	}
+}
+
+func TestSubscription_CancelWithUnreadMessage(t *testing.T) {
+	ctx, conn, _ := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
+	defer conn.Close()
+
+	sendMessageBytes(t, conn, []byte{0x1, 0x2, 0x3})
+
+	ctx.cancel() // Cancel the context.
+
+	// Check the connection is closed by the subscription.
+	buffer := make([]byte, 1)
+	deadlineDuration := 5 * time.Millisecond
 	conn.SetDeadline(time.Now().Add(deadlineDuration)) // Deadline stops this running forever if the connection wasn't closed.
 	_, err := conn.Read(buffer)
 
@@ -353,16 +353,12 @@ func newTestSubscription(pubURI string) *defaultSubscription {
 	topic := "/test/topic"
 	nodeID := "testNode"
 	messageChan := make(chan messageEvent)
-	requestStopChan := make(chan struct{})
 	remoteDisconnectedChan := make(chan string)
-	enableChan := make(chan bool)
 	msgType := testMessageType{topic}
 
 	return newDefaultSubscription(
 		pubURI, topic, msgType, nodeID,
 		messageChan,
-		enableChan,
-		requestStopChan,
 		remoteDisconnectedChan)
 }
 
@@ -505,33 +501,32 @@ func dripFeedMessageBytes(t *testing.T, conn net.Conn, buffer []byte) {
 	}
 }
 
-// createAndConnectToSubscription creates a new subscription struct and prepares a TCPROS session where we are ready to exchange messages.
-func createAndConnectToSubscription(t *testing.T) (net.Listener, net.Conn, *defaultSubscription) {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		t.Fatal(err)
+// createAndConnectToSubscription creates a new subscription struct and prepares a TCP session.
+func createAndConnectToSubscription(t *testing.T) (*fakeContext, net.Conn, *defaultSubscription) {
+	pubConn, subConn := net.Pipe()
+	pubURI := "fakeUri:12345"
+	testDialer := &TCPRosDialerFake{
+		conn: subConn,
+		err:  nil,
+		uri:  "",
 	}
-	pubURI := l.Addr().String()
 
 	subscription := newTestSubscription(pubURI)
+	subscription.dialer = testDialer
 
 	logger := modular.NewRootLogger(logrus.New())
 	log := logger.GetModuleLogger()
 
-	subscription.start(&log)
+	ctx := newFakeContext()
+	subscription.startWithContext(ctx, &log)
 
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return l, conn, subscription
+	return ctx, pubConn, subscription
 }
 
 // createAndConnectSubscriptionToPublisher creates a new subscription struct and prepares a TCPROS session where we are ready to exchange messages.
-func createAndConnectSubscriptionToPublisher(t *testing.T) (net.Listener, net.Conn, *defaultSubscription) {
-	l, conn, subscription := createAndConnectToSubscription(t)
+func createAndConnectSubscriptionToPublisher(t *testing.T) (*fakeContext, net.Conn, *defaultSubscription) {
+	ctx, conn, subscription := createAndConnectToSubscription(t)
 	doHeaderExchangeAsPublisher(t, conn, subscription)
 
-	return l, conn, subscription
+	return ctx, conn, subscription
 }

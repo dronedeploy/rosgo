@@ -14,6 +14,22 @@ const maximumTCPRosMessageSize uint32 = 250_000_000
 const tcpRosReadTimeout time.Duration = 100 * time.Millisecond
 const tcpRosWriteTimeout time.Duration = 100 * time.Millisecond
 
+// TCPRosDialer interface used for connecting to servers.
+type TCPRosDialer interface {
+	Dial(ctx goContext.Context, uri string) (net.Conn, error)
+}
+
+// TCPRosNetDialer implements the TCPRosDialer for net connections.
+type TCPRosNetDialer struct{}
+
+// Dial will attempt to connect to the specified uri over tcp.
+func (d *TCPRosNetDialer) Dial(ctx goContext.Context, uri string) (net.Conn, error) {
+	nd := net.Dialer{}
+	return nd.DialContext(ctx, "tcp", uri)
+}
+
+var _ TCPRosDialer = &TCPRosNetDialer{}
+
 // TCPRosError defines custom error types returned by readTCPRosMessage and writeTCPRosMessage. Not all errors returned will be TCPRosErrors.
 type TCPRosError int
 
