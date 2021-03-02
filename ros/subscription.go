@@ -22,6 +22,7 @@ type defaultSubscription struct {
 	requestStopChan        chan struct{} // Inbound signal for subscription to disconnect.
 	remoteDisconnectedChan chan string   // Outbound signal to indicate a disconnected channel.
 	event                  MessageEvent
+	dialer                 TCPRosDialer
 }
 
 // newDefaultSubscription populates a subscription struct from the instantiation fields and fills in default data for the operational fields.
@@ -42,6 +43,7 @@ func newDefaultSubscription(
 		requestStopChan:        requestStopChan,
 		remoteDisconnectedChan: remoteDisconnectedChan,
 		event:                  MessageEvent{"", time.Time{}, nil},
+		dialer:                 &TCPRosNetDialer{},
 	}
 }
 
@@ -68,12 +70,16 @@ const (
 
 // start spawns a go routine which connects a subscription to a publisher.
 func (s *defaultSubscription) start(log *modular.ModuleLogger) {
-	go s.run(log)
+	go s.run(goContext.Background(), log)
+}
+
+// start spawns a go routine which connects a subscription to a publisher.
+func (s *defaultSubscription) startWithContext(ctx goContext.Context, log *modular.ModuleLogger) {
+	go s.run(ctx, log)
 }
 
 // run connects to a publisher and attempts to maintain a connection until either a stop is requested or the publisher disconnects.
-func (s *defaultSubscription) run(log *modular.ModuleLogger) {
-	ctx := goContext.Background() // Root context for this go routine.
+func (s *defaultSubscription) run(ctx goContext.Context, log *modular.ModuleLogger) {
 
 	logger := *log
 	logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("defaultSubscription.run() has started")
@@ -139,20 +145,9 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 	defer cancel()
 
 	// 1. Connnect to tcp.
-	select {
-	case <-s.requestStopChan:
-		logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI}).Debug("stop requested during connect")
+	if *conn, err = s.dialer.Dial(ctx, s.pubURI); err != nil {
+		logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI, "err": err}).Debug("failed to dial publisher")
 		return false
-	// TODO: We never get here... remove this
-	case <-time.After(time.Duration(3000) * time.Millisecond):
-		logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI}).Error("failed to connect: timed out")
-		return false
-	default:
-		*conn, err = net.Dial("tcp", s.pubURI)
-		if err != nil {
-			logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI, "error": err}).Error("failed to connect: connection error")
-			return false
-		}
 	}
 
 	// 2. Write connection header to the publisher.

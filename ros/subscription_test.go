@@ -2,6 +2,8 @@ package ros
 
 import (
 	"bytes"
+	goContext "context"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -66,7 +68,89 @@ func (r *testReader) Read(buf []byte) (n int, err error) {
 	return
 }
 
+// Fake dialer used to create test connections
+type TCPRosDialerFake struct {
+	conn net.Conn
+	err  error
+	uri  string
+}
+
+// Dial fake impelementation for testing.
+func (d *TCPRosDialerFake) Dial(_ goContext.Context, uri string) (net.Conn, error) {
+	d.uri = uri
+	return d.conn, d.err
+}
+
+var _ TCPRosDialer = &TCPRosNetDialer{}
+
 // Testing starts here.
+
+// Use fake dial to ensure we dial the correct uri.
+func TestSubscription_Dial_WithError(t *testing.T) {
+	pubURI := "testuri:12345"
+	subscription := newTestSubscription(pubURI)
+	testDialer := &TCPRosDialerFake{
+		conn: nil,
+		err:  errors.New("connectionFail"),
+		uri:  "",
+	}
+	subscription.dialer = testDialer
+
+	logger := modular.NewRootLogger(logrus.New())
+	log := logger.GetModuleLogger()
+
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+
+	closed := make(chan struct{})
+	go func() {
+		subscription.run(ctx, &log)
+		closed <- struct{}{}
+	}()
+
+	select {
+	case <-closed:
+		if testDialer.uri != pubURI {
+			t.Fatalf("dialer was not sent the correct uri, got %s", testDialer.uri)
+		}
+		return
+	case <-time.After(time.Second):
+		t.Fatalf("took too long for client cancel dial")
+	}
+}
+
+// Test to verify we can cancel the context on a hanging dial.
+func TestSubscription_Dial_CanCancel(t *testing.T) {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	pubURI := l.Addr().String() // ensure we get a free port
+
+	subscription := newTestSubscription(pubURI)
+
+	logger := modular.NewRootLogger(logrus.New())
+	log := logger.GetModuleLogger()
+
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+
+	closed := make(chan struct{})
+	go func() {
+		subscription.run(ctx, &log)
+		closed <- struct{}{}
+	}()
+
+	ctx.cancel()
+
+	select {
+	case <-closed:
+		return
+	case <-time.After(time.Second):
+		t.Fatalf("took too long for client cancel dial")
+	}
+}
 
 // Create a new subscription and pass headers still works when topic isn't provided by the publisher.
 func TestSubscription_HeaderExchange_NoTopicIsOk(t *testing.T) {
