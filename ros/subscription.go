@@ -41,25 +41,15 @@ func newDefaultSubscription(
 	}
 }
 
-// connectionFailureMode specifies a connection failure mode.
-type connectionFailureMode int
-
-const (
-	publisherDisconnected connectionFailureMode = iota
-	tcpOutOfSync
-	readFailure
-	stopRequested
-)
-
 // readResult determines the result of a subscription read operation.
 type readResult int
 
 const (
-	readOk readResult = iota
-	readFailed
-	readTimeout
-	remoteDisconnected
-	readOutOfSync
+	readResultOk readResult = iota
+	readResultError
+	readResultDisconnected
+	readResultResync
+	readResultCancel
 )
 
 // start spawns a go routine which connects a subscription to a publisher.
@@ -96,28 +86,28 @@ func (s *defaultSubscription) run(ctx goContext.Context, log *modular.ModuleLogg
 		}
 
 		// Reading from publisher, this will only return when our connection fails.
-		connectionFailureMode := s.readFromPublisher(ctx, conn, log)
+		result := s.readFromPublisher(ctx, conn, log)
 
 		// Under healthy conditions, we don't get here. Always close the connection, then handle the returned connection state.
 		conn.Close()
 		conn = nil
 
-		switch connectionFailureMode {
-		case tcpOutOfSync: // TCP out of sync; we will attempt to resync by closing the connection and trying again.
+		switch result {
+		case readResultResync: // TCP out of sync; we will attempt to resync by closing the connection and trying again.
 			logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("connection closed - attempting to reconnect with publisher")
 			continue
-		case stopRequested: // A stop was externally requested - easy, just return!
+		case readResultCancel: // Cancelled - easy, just return!
 			return
-		case publisherDisconnected: // Publisher disconnected - not much we can do here, the subscription has ended.
+		case readResultDisconnected: // Publisher disconnected - not much we can do here, the subscription has ended.
 			logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI}).Info("connection closed - publisher has disconnected")
 			s.remoteDisconnectedChan <- s.pubURI
 			return
-		case readFailure: // Read failure; the reason is uncertain, maybe the bus is polluted? We give up.
+		case readResultError: // Read failure; the reason is uncertain, maybe the bus is polluted? We give up.
 			logger.WithFields(logrus.Fields{"topic": s.topic}).Error("connection closed - failed to read a message correctly")
 			s.remoteDisconnectedChan <- s.pubURI
 			return
 		default: // Unknown failure - this is a bug, log the connectionFailureMode to help determine cause.
-			logger.WithFields(logrus.Fields{"topic": s.topic, "failureMode": connectionFailureMode}).Error("connection closed - unknown failure mode")
+			logger.WithFields(logrus.Fields{"topic": s.topic, "readResult": result}).Error("connection closed - unknown failure mode")
 			return
 		}
 	}
@@ -267,8 +257,7 @@ func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, 
 }
 
 // readFromPublisher maintains a connection with a publisher. When a connection is stable, it will loop until either the publisher or subscriber disconnects.
-func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log *modular.ModuleLogger) connectionFailureMode {
-	enabled := true
+func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log *modular.ModuleLogger) readResult {
 	logger := *log
 
 	// TCPROS reader setup.
@@ -276,43 +265,50 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 	defer cancel()
 	readResultChan := make(chan TCPRosReadResult)
 
-	// Subscriber loop:
-	// - Checks for external stop requests.
-	// - Packages the tcp serial stream into messages and passes them through the message channel.
-	for {
-		// Read a TCPROS message.
-		go readTCPRosMessage(ctx, conn, readResultChan)
-
-		var tcpResult TCPRosReadResult
-		readComplete := false
-		for readComplete == false {
+	// Read messages until the context is done.
+	go func() {
+		for {
+			readTCPRosMessage(ctx, conn, readResultChan)
 			select {
-			case tcpResult = <-readResultChan:
-				readComplete = true
 			case <-ctx.Done():
-				return stopRequested
+				return
+			default:
 			}
 		}
+	}()
 
-		switch errorToReadResult(tcpResult.Err) {
-		case readOk:
-			if enabled { // Apply flow control - only read when enabled!
-				s.event.ReceiptTime = time.Now()
-				select {
-				case s.messageChan <- messageEvent{bytes: tcpResult.Buf, event: s.event}:
-				case <-time.After(time.Duration(30) * time.Millisecond):
-					// Dropping message.
-					logger.WithFields(logrus.Fields{"topic": s.topic}).Error("dropping subscribed message due to timeout")
+	// Control and prioritize messages
+	// activeMsgChan stays nil until there is a new message to forward
+	// latestMessage always holds the latest message avaliable
+	var activeMsgChan chan messageEvent
+	var latestMessage messageEvent
+
+	// Subscriber loop:
+	// - Packages the tcp serial stream into messages and passes them through the message channel.
+	// - Prioritizes the latest message, discards stale messages using the nil channel pattern.
+	//   https://www.godesignpatterns.com/2014/05/nil-channels-always-block.html
+	// - Uses context for cancellation.
+	for {
+		select {
+		case tcpResult := <-readResultChan:
+			rResult := errorToReadResult(tcpResult.Err)
+			switch rResult {
+			case readResultOk:
+				if activeMsgChan != nil {
+					logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("stale message dropped")
 				}
+				s.event.ReceiptTime = time.Now()
+				latestMessage = messageEvent{bytes: tcpResult.Buf, event: s.event}
+				activeMsgChan = s.messageChan
+			default:
+				// We aren't ok, return.
+				return rResult
 			}
-		case readOutOfSync, readTimeout:
-			return tcpOutOfSync
-		case remoteDisconnected:
-			return publisherDisconnected
-		case readFailed:
-			return readFailure
-		default:
-			return readFailure
+		case activeMsgChan <- latestMessage:
+			activeMsgChan = nil
+			latestMessage = messageEvent{}
+		case <-ctx.Done():
+			return readResultCancel
 		}
 	}
 }
@@ -320,20 +316,20 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 // errorToReadResult converts errors to readResult to be handled further up the callstack.
 func errorToReadResult(err error) readResult {
 	if err == nil {
-		return readOk
+		return readResultOk
 	}
 	if err == io.EOF {
-		return remoteDisconnected
+		return readResultDisconnected
 	}
 	if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-		return readTimeout
+		return readResultError
 	}
 	if e, ok := err.(*TCPRosError); ok {
 		// We assume if the size is too large, we have gone out of sync.
 		if *e == TCPRosErrorSizeTooLarge {
-			return readOutOfSync
+			return readResultResync
 		}
 	}
-	// Not sure what the cause was - it is just a generic readFailure.
-	return readFailed
+	// Not sure what the cause was - it is just a generic error.
+	return readResultError
 }

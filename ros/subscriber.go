@@ -39,7 +39,7 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	sub := new(defaultSubscriber)
 	sub.topic = topic
 	sub.msgType = msgType
-	sub.msgChan = make(chan messageEvent) // TODO, make a channel, not queue
+	sub.msgChan = make(chan messageEvent)
 	sub.pubListChan = make(chan []string, 10)
 	sub.addCallbackChan = make(chan interface{}, 10)
 	sub.shutdownChan = make(chan struct{})

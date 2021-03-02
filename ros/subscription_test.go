@@ -241,7 +241,7 @@ func TestSubscription_HeaderExchange_CloseRequestWithFrozenPublisher(t *testing.
 }
 
 // Valid messages are forwarded from the publisher TCP stream by the subscription.
-func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
+func TestSubscription_ForwardsMessages(t *testing.T) {
 	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
 	defer ctx.cleanUp()
 	defer conn.Close()
@@ -251,6 +251,30 @@ func TestSubscription_SubscriptionForwardsMessages(t *testing.T) {
 
 	// Send another one!
 	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8})
+
+	conn.Close()
+	select {
+	case channelName := <-subscription.remoteDisconnectedChan:
+		t.Log(channelName)
+		return
+	case <-time.After(time.Duration(100) * time.Millisecond):
+		t.Fatalf("Took too long for client to disconnect from publisher")
+	}
+}
+
+// Prioritizes new messages over old messages.
+func TestSubscription_PrioritizesLatestMessage(t *testing.T) {
+	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
+	defer conn.Close()
+
+	staleBuffer := []byte{0x12, 0x23}
+	newBuffer := []byte{0x1, 0x2, 0x3}
+
+	sendMessageBytes(t, conn, staleBuffer)
+	go sendMessageBytes(t, conn, newBuffer)
+	<-time.After(1 * time.Millisecond)
+	receiveMessageInChannel(t, subscription.messageChan, newBuffer)
 
 	conn.Close()
 	select {
@@ -283,18 +307,36 @@ func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
 	}
 }
 
-// Request stop shuts down an active connection.
-func TestSubscription_RequestStop(t *testing.T) {
+func TestSubscription_CancelAtStart(t *testing.T) {
 	ctx, conn, _ := createAndConnectSubscriptionToPublisher(t)
 	defer ctx.cleanUp()
 	defer conn.Close()
 
-	// Cancel the context
-	ctx.cancel()
+	ctx.cancel() // Cancel the context.
 
 	// Check the connection is closed by the subscription.
 	buffer := make([]byte, 1)
-	deadlineDuration := 5 * time.Second                // Subscriptions only check the stop request every second, so our close check needs to be longer.
+	deadlineDuration := 5 * time.Millisecond
+	conn.SetDeadline(time.Now().Add(deadlineDuration)) // Deadline stops this running forever if the connection wasn't closed.
+	_, err := conn.Read(buffer)
+
+	if err != io.EOF {
+		t.Fatalf("Expected subscription to close connection, err: %s", err)
+	}
+}
+
+func TestSubscription_CancelWithUnreadMessage(t *testing.T) {
+	ctx, conn, _ := createAndConnectSubscriptionToPublisher(t)
+	defer ctx.cleanUp()
+	defer conn.Close()
+
+	sendMessageBytes(t, conn, []byte{0x1, 0x2, 0x3})
+
+	ctx.cancel() // Cancel the context.
+
+	// Check the connection is closed by the subscription.
+	buffer := make([]byte, 1)
+	deadlineDuration := 5 * time.Millisecond
 	conn.SetDeadline(time.Now().Add(deadlineDuration)) // Deadline stops this running forever if the connection wasn't closed.
 	_, err := conn.Read(buffer)
 
