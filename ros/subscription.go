@@ -143,6 +143,7 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 	case <-s.requestStopChan:
 		logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI}).Debug("stop requested during connect")
 		return false
+	// TODO: We never get here... remove this
 	case <-time.After(time.Duration(3000) * time.Millisecond):
 		logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI}).Error("failed to connect: timed out")
 		return false

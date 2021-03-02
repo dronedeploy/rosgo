@@ -16,6 +16,7 @@ import (
 // fakeContext is a context.Context interface fake.
 type fakeContext struct {
 	done chan struct{}
+	err  error
 }
 
 func newFakeContext() *fakeContext {
@@ -27,6 +28,7 @@ func newFakeContext() *fakeContext {
 // Helper for cleanup in a test.
 func (ctx *fakeContext) cancel() {
 	close(ctx.done)
+	ctx.err = goContext.Canceled
 }
 
 // Helper for cleanup in a test.
@@ -35,7 +37,7 @@ func (ctx *fakeContext) cleanUp() {
 	case <-ctx.done:
 		// Already closed!
 	default:
-		close(ctx.done)
+		ctx.cancel()
 	}
 }
 
@@ -49,7 +51,7 @@ func (ctx *fakeContext) Done() <-chan struct{} {
 }
 
 func (ctx *fakeContext) Err() error {
-	return nil
+	return ctx.err
 }
 
 func (ctx *fakeContext) Value(key interface{}) interface{} {
@@ -155,6 +157,126 @@ var _ net.Conn = &fakeConn{}
 var _ io.Reader = &fakeConn{}
 
 // Tests start here.
+
+// TCPRosDialer tests
+func TestTcpRosDialer_netDialer(t *testing.T) {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	pubURI := l.Addr().String()
+
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+
+	dialer := TCPRosNetDialer{}
+
+	type clientResult struct {
+		conn net.Conn
+		err  error
+	}
+
+	clientChan := make(chan clientResult)
+
+	go func() {
+		c, e := dialer.Dial(ctx, pubURI)
+		clientChan <- clientResult{c, e}
+	}()
+
+	// Accept the incoming dial.
+	serverConn, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverConn.Close()
+
+	// Verify the client connected.
+	var clientConn net.Conn
+	select {
+	case client := <-clientChan:
+		if client.err != nil {
+			t.Fatalf("client connection error: %v", client.err)
+		}
+		clientConn = client.conn
+		defer clientConn.Close()
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("client did not appear to connect")
+	}
+
+	// Verify communication server to client.
+	if n, err := serverConn.Write([]byte("Test")); n != 4 || err != nil {
+		t.Fatalf("server write failed with n: %d, err: %v", n, err)
+	}
+	b := make([]byte, 4)
+	if n, err := clientConn.Read(b); n != 4 || err != nil {
+		t.Fatalf("client read failed with n: %d, err: %v", n, err)
+	}
+	if string(b) != "Test" {
+		t.Fatalf("unexpected read message: %v", string(b))
+	}
+
+	// Verify communication client to server.
+	if n, err := clientConn.Write([]byte("Test")); n != 4 || err != nil {
+		t.Fatalf("client write failed with n: %d, err: %v", n, err)
+	}
+	b = make([]byte, 4)
+	if n, err := serverConn.Read(b); n != 4 || err != nil {
+		t.Fatalf("server read failed with n: %d, err: %v", n, err)
+	}
+	if string(b) != "Test" {
+		t.Fatalf("unexpected read message: %v", string(b))
+	}
+
+	// Verify closing the connection as usual.
+	if err := serverConn.Close(); err != nil {
+		t.Fatalf("closing server error: %v", err)
+	}
+	b = make([]byte, 4)
+	if _, err := clientConn.Read(b); err != io.EOF {
+		t.Fatalf("client read expected to return EOF, got err: %v", err)
+	}
+}
+
+func TestTcpRosDialer_netDialer_cancel(t *testing.T) {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	pubURI := l.Addr().String()
+
+	ctx := newFakeContext()
+	defer ctx.cleanUp()
+
+	dialer := TCPRosNetDialer{}
+
+	type clientResult struct {
+		conn net.Conn
+		err  error
+	}
+
+	clientChan := make(chan clientResult)
+
+	go func() {
+		c, e := dialer.Dial(ctx, pubURI)
+		clientChan <- clientResult{c, e}
+	}()
+
+	// Don't accept current call, cancel instead.
+	ctx.cancel()
+
+	// Verify the we got cancelled.
+	select {
+	case client := <-clientChan:
+		if client.err == nil {
+			client.conn.Close()
+			t.Fatalf("expected connection canceled error")
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("client did not appear to cancel")
+	}
+}
 
 // Tolerance for checking timing on reads. The results of these checks are not deterministic because we don't mock time yet.
 const fuzzyTimeTolerance time.Duration = 100 * time.Millisecond
