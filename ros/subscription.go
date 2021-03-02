@@ -18,7 +18,6 @@ type defaultSubscription struct {
 	msgType                MessageType
 	nodeID                 string
 	messageChan            chan messageEvent
-	enableChan             chan bool
 	remoteDisconnectedChan chan string // Outbound signal to indicate a disconnected channel.
 	event                  MessageEvent
 	dialer                 TCPRosDialer
@@ -28,7 +27,6 @@ type defaultSubscription struct {
 func newDefaultSubscription(
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	messageChan chan messageEvent,
-	enableChan chan bool,
 	remoteDisconnectedChan chan string) *defaultSubscription {
 
 	return &defaultSubscription{
@@ -37,7 +35,6 @@ func newDefaultSubscription(
 		msgType:                msgType,
 		nodeID:                 nodeID,
 		messageChan:            messageChan,
-		enableChan:             enableChan,
 		remoteDisconnectedChan: remoteDisconnectedChan,
 		event:                  MessageEvent{"", time.Time{}, nil},
 		dialer:                 &TCPRosNetDialer{},
@@ -67,7 +64,7 @@ const (
 
 // start spawns a go routine which connects a subscription to a publisher.
 func (s *defaultSubscription) start(log *modular.ModuleLogger) {
-	go s.run(goContext.Background(), log)
+	go s.run(goContext.Background(), log) // TODO Remove this function, rename the other to start
 }
 
 // start spawns a go routine which connects a subscription to a publisher.
@@ -290,7 +287,6 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 		readComplete := false
 		for readComplete == false {
 			select {
-			case enabled = <-s.enableChan:
 			case tcpResult = <-readResultChan:
 				readComplete = true
 			case <-ctx.Done():

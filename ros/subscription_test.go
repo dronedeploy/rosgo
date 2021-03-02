@@ -283,39 +283,6 @@ func TestSubscription_SubscriptionForwardsDripFedMessage(t *testing.T) {
 	}
 }
 
-// The subscription adheres to the flow control policy.
-func TestSubscription_FlowControl(t *testing.T) {
-	ctx, conn, subscription := createAndConnectSubscriptionToPublisher(t)
-	defer conn.Close()
-	defer ctx.cleanUp()
-
-	// Send something - channel enabled.
-	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-
-	// Send something - channel disabled.
-	subscription.enableChan <- false
-	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-
-	// Send something - channel enabled.
-	subscription.enableChan <- true
-	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-	sendMessageAndReceiveInChannel(t, conn, subscription.messageChan, []byte{0x12, 0x23, 0x43})
-
-	// Send something - channel disabled.
-	subscription.enableChan <- false
-	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23})
-	sendMessageNoReceive(t, conn, subscription.messageChan, []byte{0x12, 0x23, 0x43})
-
-	conn.Close()
-	select {
-	case channelName := <-subscription.remoteDisconnectedChan:
-		t.Log(channelName)
-		return
-	case <-time.After(time.Duration(100) * time.Millisecond):
-		t.Fatalf("Took too long for client to disconnect from publisher")
-	}
-}
-
 // Request stop shuts down an active connection.
 func TestSubscription_RequestStop(t *testing.T) {
 	ctx, conn, _ := createAndConnectSubscriptionToPublisher(t)
@@ -345,13 +312,11 @@ func newTestSubscription(pubURI string) *defaultSubscription {
 	nodeID := "testNode"
 	messageChan := make(chan messageEvent)
 	remoteDisconnectedChan := make(chan string)
-	enableChan := make(chan bool)
 	msgType := testMessageType{topic}
 
 	return newDefaultSubscription(
 		pubURI, topic, msgType, nodeID,
 		messageChan,
-		enableChan,
 		remoteDisconnectedChan)
 }
 

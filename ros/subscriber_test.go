@@ -17,7 +17,7 @@ func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 	topic := "/test/topic"
 	msgType := testMessageType{topic}
 
-	ctx, conn, _, _, disconnectedChan := setupRemotePublisherConnTest(t)
+	ctx, conn, _, disconnectedChan := setupRemotePublisherConnTest(t)
 	defer ctx.cleanUp()
 	defer conn.Close()
 
@@ -46,7 +46,7 @@ func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 
 func TestRemotePublisherConn_ClosesFromContext(t *testing.T) {
 
-	ctx, conn, _, _, _ := setupRemotePublisherConnTest(t)
+	ctx, conn, _, _ := setupRemotePublisherConnTest(t)
 	defer ctx.cleanUp()
 	defer conn.Close()
 
@@ -69,7 +69,7 @@ func TestRemotePublisherConn_ClosesFromContext(t *testing.T) {
 
 func TestRemotePublisherConn_RemoteReceivesData(t *testing.T) {
 
-	ctx, conn, msgChan, _, disconnectedChan := setupRemotePublisherConnTest(t)
+	ctx, conn, msgChan, disconnectedChan := setupRemotePublisherConnTest(t)
 	defer ctx.cleanUp()
 	defer conn.Close()
 
@@ -122,7 +122,7 @@ func TestSubscriber_Shutdown(t *testing.T) {
 }
 
 // setupRemotePublisherConnTest establishes all init values and kicks off the start function.
-func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan messageEvent, chan bool, chan string) {
+func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan messageEvent, chan string) {
 	pubConn, subConn := net.Pipe()
 	pubURI := "fakeUri:12345"
 	testDialer := &TCPRosDialerFake{
@@ -136,16 +136,15 @@ func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan me
 	topic := "/test/topic"
 	nodeID := "testNode"
 	msgChan := make(chan messageEvent)
-	enableChan := make(chan bool)
 	disconnectedChan := make(chan string)
 	msgType := testMessageType{}
 
 	log := logger.GetModuleLogger()
 	log.SetLevel(logrus.InfoLevel)
 
-	startRemotePublisherConn(ctx, &log, testDialer, pubURI, topic, msgType, nodeID, msgChan, enableChan, disconnectedChan)
+	startRemotePublisherConn(ctx, &log, testDialer, pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
 
-	return ctx, pubConn, msgChan, enableChan, disconnectedChan
+	return ctx, pubConn, msgChan, disconnectedChan
 }
 
 // connectToSubscriber connects a net.Conn object to a subscriber and emulates the publisher header exchange. Puts the subscriber in a state where it is ready to receive messages.

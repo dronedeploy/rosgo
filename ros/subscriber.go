@@ -17,45 +17,46 @@ type messageEvent struct {
 }
 
 type subscriptionChannels struct {
-	cancel         goContext.CancelFunc
 	enableMessages chan bool
 }
 
 // The subscriber object runs in own goroutine (start).
 type defaultSubscriber struct {
-	topic             string
-	msgType           MessageType
-	pubList           []string
-	pubListChan       chan []string
-	msgChan           chan messageEvent
-	callbacks         []interface{}
-	addCallbackChan   chan interface{}
-	shutdownChan      chan struct{}
-	subscriptionChans map[string]subscriptionChannels
-	uri2pub           map[string]string
-	disconnectedChan  chan string
+	topic            string
+	msgType          MessageType
+	pubList          []string
+	pubListChan      chan []string
+	msgChan          chan messageEvent
+	callbacks        []interface{}
+	addCallbackChan  chan interface{}
+	shutdownChan     chan struct{}
+	cancel           map[string]goContext.CancelFunc
+	uri2pub          map[string]string
+	disconnectedChan chan string
 }
 
 func newDefaultSubscriber(topic string, msgType MessageType, callback interface{}) *defaultSubscriber {
 	sub := new(defaultSubscriber)
 	sub.topic = topic
 	sub.msgType = msgType
-	sub.msgChan = make(chan messageEvent, 10)
+	sub.msgChan = make(chan messageEvent, 10) // TODO, make a channel, not queue
 	sub.pubListChan = make(chan []string, 10)
 	sub.addCallbackChan = make(chan interface{}, 10)
 	sub.shutdownChan = make(chan struct{})
 	sub.disconnectedChan = make(chan string, 10)
 	sub.uri2pub = make(map[string]string)
-	sub.subscriptionChans = make(map[string]subscriptionChannels)
+	sub.cancel = make(map[string]goContext.CancelFunc)
 	sub.callbacks = []interface{}{callback}
 	return sub
 }
 
 func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log *modular.ModuleLogger) {
+	enabled := true
 	ctx, cancel := goContext.WithCancel(goContext.Background())
 	defer cancel()
 	logger := *log
 	logger.Debugf("Subscriber goroutine for %s started.", sub.topic)
+
 	wg.Add(1)
 	defer wg.Done()
 	defer func() {
@@ -69,9 +70,9 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = list
 			for _, pub := range deadPubs {
-				if subChans, ok := sub.subscriptionChans[pub]; ok {
-					subChans.cancel()
-					delete(sub.subscriptionChans, pub)
+				if subCancel, ok := sub.cancel[pub]; ok {
+					subCancel()
+					delete(sub.cancel, pub)
 				}
 			}
 
@@ -94,12 +95,11 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 					addr := protocolParams[1].(string)
 					port := protocolParams[2].(int32)
 					uri := fmt.Sprintf("%s:%d", addr, port)
-					enableMessagesChan := make(chan bool)
 					sub.uri2pub[uri] = pub
 					subCtx, subCancel := goContext.WithCancel(ctx)
 					defer subCancel()
-					sub.subscriptionChans[pub] = subscriptionChannels{cancel: subCancel, enableMessages: enableMessagesChan}
-					startRemotePublisherConn(subCtx, log, &TCPRosNetDialer{}, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, enableMessagesChan, sub.disconnectedChan)
+					sub.cancel[pub] = subCancel
+					startRemotePublisherConn(subCtx, log, &TCPRosNetDialer{}, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan)
 				} else {
 					logger.Warn(sub.topic, " : rosgo does not support protocol: ", name)
 				}
@@ -110,6 +110,9 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			sub.callbacks = append(sub.callbacks, callback)
 
 		case msgEvent := <-sub.msgChan:
+			if enabled == false {
+				continue
+			}
 			// Pop received message then bind callbacks and enqueue to the job channel.
 			logger.Debug(sub.topic, " : Receive msgChan")
 
@@ -141,9 +144,9 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		case pubURI := <-sub.disconnectedChan:
 			logger.Debugf("Connection to %s was disconnected.", pubURI)
 			if pub, ok := sub.uri2pub[pubURI]; ok {
-				if deadSubChans, ok := sub.subscriptionChans[pub]; ok {
-					deadSubChans.cancel()
-					delete(sub.subscriptionChans, pub)
+				if subCancel, ok := sub.cancel[pub]; ok {
+					subCancel()
+					delete(sub.cancel, pub)
 				}
 				delete(sub.uri2pub, pubURI)
 			}
@@ -159,10 +162,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			sub.shutdownChan <- struct{}{}
 			return
 
-		case enabled := <-enableChan:
-			for _, subscription := range sub.subscriptionChans {
-				subscription.enableMessages <- enabled
-			}
+		case enabled = <-enableChan:
 		}
 	}
 }
@@ -172,9 +172,8 @@ func startRemotePublisherConn(ctx goContext.Context, log *modular.ModuleLogger,
 	dialer TCPRosDialer,
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	msgChan chan messageEvent,
-	enableMessagesChan chan bool,
 	disconnectedChan chan string) {
-	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, enableMessagesChan, disconnectedChan)
+	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
 	sub.dialer = dialer
 	sub.startWithContext(ctx, log)
 }
