@@ -251,22 +251,28 @@ func startRemotePublisherConn(ctx goContext.Context, dialer TCPRosDialer,
 	sub.startWithContext(ctx, log)
 }
 
-// TODO: Put tests on this
+// setDifference returns the difference of two "sets" represented by string arrays.
 func setDifference(lhs []string, rhs []string) []string {
-	left := map[string]bool{}
-	for _, item := range lhs {
-		left[item] = true
+	result := make([]string, 0)
+	for _, entry := range lhs {
+		hasEntry := false
+		for _, nEntry := range rhs {
+			if entry == nEntry {
+				hasEntry = true
+				break
+			}
+		}
+		if hasEntry == false {
+			result = append(result, entry)
+		}
 	}
-	right := map[string]bool{}
-	for _, item := range rhs {
-		right[item] = true
-	}
-	for k := range right {
-		delete(left, k)
-	}
-	var result []string
-	for k := range left {
-		result = append(result, k)
+	// Dedup
+	for i, entry := range result {
+		for j := i + 1; j < len(result); j++ {
+			if entry == result[j] {
+				result = append(result[:j], result[j+1:]...)
+			}
+		}
 	}
 	return result
 }

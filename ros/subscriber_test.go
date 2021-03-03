@@ -4,6 +4,7 @@ import (
 	goContext "context"
 	"io"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -451,10 +452,29 @@ func TestSubscriber_Run_JobPrioritization(t *testing.T) {
 }
 
 // TODO tests:
-// - job channel prioritization
 // - add publishers
 // - remove publishers (through disconnection)
 // -
+
+func TestSetDifference(t *testing.T) {
+	testSetDifference := func(lhs []string, rhs []string, expected []string) {
+		if result := setDifference(lhs, rhs); reflect.DeepEqual(expected, result) == false {
+			t.Fatalf("setDifference(%v, %v) failed, expected %v, got %v", lhs, rhs, expected, result)
+		}
+	}
+
+	testSetDifference([]string{"a", "b", "c"}, []string{"a", "b", "c"}, []string{})
+	testSetDifference([]string{"a", "b", "c"}, []string{"a", "b"}, []string{"c"})
+	testSetDifference([]string{"a", "b", "c"}, []string{"c", "b"}, []string{"a"})
+	testSetDifference([]string{}, []string{"a", "b", "c"}, []string{})
+	testSetDifference([]string{"a", "b", "c"}, []string{}, []string{"a", "b", "c"})
+	testSetDifference([]string{"I", "am", "Sam"}, []string{"Sam", "I", "am"}, []string{})
+	testSetDifference([]string{"She", "sells", "sea"}, []string{"shells", "on", "the", "sea", "shore"}, []string{"She", "sells"})
+	testSetDifference([]string{"a", "a", "b", "b"}, []string{"b"}, []string{"a"})
+	testSetDifference([]string{"a", "a", "b", "b"}, []string{"a"}, []string{"b"})
+	testSetDifference([]string{"a", "b", "b"}, []string{"a", "a"}, []string{"b"})
+
+}
 
 // Test Helpers
 
