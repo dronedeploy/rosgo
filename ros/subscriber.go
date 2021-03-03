@@ -64,6 +64,9 @@ func (a *SubscriberRosAPI) Unregister() error {
 
 var _ SubscriberRos = &SubscriberRosAPI{}
 
+// startPublosherSubscription defines a function interface for starting a subscription in run.
+type startPublisherSubscription func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger)
+
 // The subscriber object runs in own goroutine (start).
 type defaultSubscriber struct {
 	topic            string
@@ -114,11 +117,16 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		nodeAPIURI: nodeAPIURI,
 	}
 
+	// Decouples a bunch of implementation details from the actual run logic.
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {
+		startRemotePublisherConn(ctx, &TCPRosNetDialer{}, pubURI, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan, log)
+	}
+
 	// Setup is complete, run the subscriber.
-	sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, log)
+	sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 }
 
-func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, nodeID string, log *modular.ModuleLogger) {
+func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, startSubscription startPublisherSubscription, log *modular.ModuleLogger) {
 	logger := *log
 	enabled := true
 
@@ -155,7 +163,17 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				// TODO:
 				// sub.pubList = append(sub.pubList, pub)
 				sub.cancel[pub] = subCancel
-				startRemotePublisherConn(subCtx, log, &TCPRosNetDialer{}, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan)
+				startSubscription(subCtx, uri, log)
+			}
+
+		case pubURI := <-sub.disconnectedChan:
+			logger.Debugf("Connection to %s was disconnected.", pubURI)
+			if pub, ok := sub.uri2pub[pubURI]; ok {
+				if subCancel, ok := sub.cancel[pub]; ok {
+					subCancel()
+					delete(sub.cancel, pub)
+				}
+				delete(sub.uri2pub, pubURI)
 			}
 
 		case callback := <-sub.addCallbackChan:
@@ -203,23 +221,14 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			}
 			logger.Debug("Callback job enqueued.")
 
-		case pubURI := <-sub.disconnectedChan:
-			logger.Debugf("Connection to %s was disconnected.", pubURI)
-			if pub, ok := sub.uri2pub[pubURI]; ok {
-				if subCancel, ok := sub.cancel[pub]; ok {
-					subCancel()
-					delete(sub.cancel, pub)
-				}
-				delete(sub.uri2pub, pubURI)
-			}
-
 		case <-sub.shutdownChan:
-			// Shutdown subscription goroutine.
-			logger.Debug(sub.topic, " : receive shutdownChan")
-
-			if err := rosAPI.Unregister(); err != nil {
-				logger.Warn(sub.topic, " : unregister error: ", err)
-			}
+			// Shutdown subscription goroutine; keeps shutdowns snappy.
+			go func() {
+				logger.Debug(sub.topic, " : receive shutdownChan")
+				if err := rosAPI.Unregister(); err != nil {
+					logger.Warn(sub.topic, " : unregister error: ", err)
+				}
+			}()
 			sub.shutdownChan <- struct{}{}
 			return
 
@@ -233,11 +242,11 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 // `startPublisherSubscription`
 
 // startRemotePublisherConn creates a subscription to a remote publisher and runs it.
-func startRemotePublisherConn(ctx goContext.Context, log *modular.ModuleLogger,
-	dialer TCPRosDialer,
+func startRemotePublisherConn(ctx goContext.Context, dialer TCPRosDialer,
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	msgChan chan messageEvent,
-	disconnectedChan chan string) {
+	disconnectedChan chan string,
+	log *modular.ModuleLogger) {
 	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
 	sub.dialer = dialer
 	sub.startWithContext(ctx, log)

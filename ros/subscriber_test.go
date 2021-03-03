@@ -1,6 +1,7 @@
 package ros
 
 import (
+	goContext "context"
 	"io"
 	"net"
 	"testing"
@@ -130,12 +131,12 @@ func TestSubscriber_Run_Shutdown(t *testing.T) {
 	jobChan := make(chan func())
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
-	nodeID := "testNode"
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
 	log := makeTestLogger()
 
 	shutdownSubscriber := make(chan struct{})
 	go func() {
-		sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, log)
+		sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 		shutdownSubscriber <- struct{}{}
 	}()
 
@@ -168,12 +169,12 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 	jobChan := make(chan func())
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
-	nodeID := "testNode"
 	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
 
 	shutdownSubscriber := make(chan struct{})
 	go func() {
-		sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, log)
+		sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 		shutdownSubscriber <- struct{}{}
 	}()
 
@@ -214,6 +215,12 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 		t.Fatal("expected job from enabled channel")
 	}
 }
+
+// TODO tests:
+// - job channel prioritization
+// - add publishers
+// - remove publishers (through disconnection)
+// -
 
 // Test Helpers
 
@@ -256,7 +263,7 @@ func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan me
 	msgType := testMessageType{}
 	log := makeTestLogger()
 
-	startRemotePublisherConn(ctx, log, testDialer, pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
+	startRemotePublisherConn(ctx, testDialer, pubURI, topic, msgType, nodeID, msgChan, disconnectedChan, log)
 
 	return ctx, pubConn, msgChan, disconnectedChan
 }
