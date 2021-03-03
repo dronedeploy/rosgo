@@ -270,6 +270,140 @@ func TestSubscriber_Run_JobPackaging(t *testing.T) {
 	}
 }
 
+func TestSubscriber_Run_JobCancellation(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
+
+	shutdownSubscriber := make(chan struct{})
+	go func() {
+		sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+		shutdownSubscriber <- struct{}{}
+	}()
+
+	bPayload := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+	sub.msgChan <- messageEvent{
+		bytes: bPayload,
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	go sub.Shutdown()
+
+	select {
+	case <-shutdownSubscriber:
+	case <-time.After(5 * time.Millisecond):
+		t.Fatal("expected shutdown")
+	}
+
+	// Do some cleanup just in case.
+	done := false
+	for done == false {
+		select {
+		case <-jobChan:
+		default:
+			done = true
+		}
+	}
+}
+
+func TestSubscriber_Run_JobDisable(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
+
+	bPayload := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+	sub.msgChan <- messageEvent{
+		bytes: bPayload,
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	enableChan <- false // Disable flow control before we fetch the job.
+
+	select {
+	case <-jobChan:
+		t.Fatalf("expected to disable latest job")
+	case <-time.After(time.Millisecond):
+	}
+}
+
+func TestSubscriber_Run_JobPrioritization(t *testing.T) {
+	var msg Message
+	sub := makeTestSubscriberWithJobCallback(func(m Message, e MessageEvent) {
+		msg = m
+	})
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
+
+	stalePayload := []byte{0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7}
+	newPayload := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+
+	go func() {
+		sub.msgChan <- messageEvent{
+			bytes: stalePayload,
+			event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+		}
+
+		sub.msgChan <- messageEvent{
+			bytes: newPayload,
+			event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+		}
+	}()
+
+	// Delay so both messages get picked up.
+	<-time.After(5 * time.Millisecond)
+
+	select {
+	case job := <-jobChan:
+		job()
+	case <-time.After(time.Millisecond):
+		t.Fatal("expected job from message channel")
+	}
+
+	if dmsg, ok := msg.(*DynamicMessage); ok {
+		if b, ok := dmsg.data["u8"]; ok {
+			if bArray, ok := b.([]byte); ok {
+				if string(bArray) != string(newPayload) {
+					t.Fatalf("payload mismatch, expected %v, got %v", newPayload, bArray)
+				}
+			} else {
+				t.Fatal("expected u8 field to be byte array")
+			}
+		} else {
+			t.Fatal("expected u8 field in message data")
+		}
+	} else {
+		t.Fatal("message was not dynamic message")
+	}
+
+	// Do some cleanup just in case.
+	done := false
+	for done == false {
+		select {
+		case <-sub.msgChan:
+		default:
+			done = true
+		}
+	}
+}
+
 // TODO tests:
 // - job channel prioritization
 // - add publishers

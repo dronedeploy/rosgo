@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	"time"
 
 	modular "github.com/edwinhayes/logrus-modular"
 	"github.com/pkg/errors"
@@ -130,6 +129,9 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 	cancelMap := make(map[string]goContext.CancelFunc)
 	uri2pubMap := make(map[string]string)
 
+	var activeJobChan chan func()
+	var latestJob func()
+
 	for {
 		select {
 		case list := <-sub.pubListChan:
@@ -194,16 +196,9 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 
 			callbacks := make([]interface{}, len(sub.callbacks))
 			copy(callbacks, sub.callbacks)
-			// TODO: Move this to the same pattern used in subscriber, should be:
-			// latestJob := func() { .... }
-			// activeJobChan = jobChan
-			//
-			// then in the main for-select loop, we have:
-			// case activeJobChan <- latestJob:
-			//   activeJobChan = nil
-			//   latestJob = func(){}
-			select {
-			case jobChan <- func() {
+
+			// Prepare the latest job to be passed on.
+			latestJob = func() {
 				m := sub.msgType.NewMessage()
 				reader := bytes.NewReader(msgEvent.bytes)
 				if err := m.Deserialize(reader); err != nil {
@@ -218,13 +213,12 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 						fun.Call(args[0:numArgsNeeded])
 					}
 				}
-			}:
-				logger.Debug(sub.topic, " : Callback job enqueued.")
-			// TODO: Eliminate this nasty bastard
-			case <-time.After(time.Duration(3) * time.Second):
-				logger.Debug(sub.topic, " : Callback job timed out.")
 			}
-			logger.Debug("Callback job enqueued.")
+			activeJobChan = jobChan
+		case activeJobChan <- latestJob:
+			logger.Debug(sub.topic, " : Callback job enqueued.")
+			activeJobChan = nil
+			latestJob = func() {}
 
 		case <-sub.shutdownChan:
 			// Shutdown subscription goroutine; keeps shutdowns snappy.
@@ -238,6 +232,9 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			return
 
 		case enabled = <-enableChan:
+			// Stop any active jobs trying to get in the queue.
+			activeJobChan = nil
+			latestJob = func() {}
 		}
 	}
 }
