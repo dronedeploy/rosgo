@@ -13,6 +13,39 @@ import (
 
 // `subscriber_test.go` uses `testMessageType` and `testMessage` defined in `subscription_test.go`.
 
+// SubscriberRosAPI implements SubscriberRos using callRosAPI rpc calls.
+type fakeSubscriberRos struct {
+	pub           []string
+	uri           string
+	uriErr        error
+	unregistered  bool
+	unregisterErr error
+}
+
+func newFakeSubscriberRos() *fakeSubscriberRos {
+	a := &fakeSubscriberRos{}
+	a.pub = make([]string, 0)
+	a.uri = ""
+	a.uriErr = nil
+	a.unregistered = false
+	a.unregisterErr = nil
+	return a
+}
+
+// RequestTopicURI requests the URI of a given topic from a publisher.
+func (a *fakeSubscriberRos) RequestTopicURI(pub string) (string, error) {
+	a.pub = append(a.pub, pub)
+	return a.uri, a.uriErr
+}
+
+// Unregister removes a subscriber from a topic.
+func (a *fakeSubscriberRos) Unregister() error {
+	a.unregistered = true
+	return a.unregisterErr
+}
+
+var _ SubscriberRos = &SubscriberRosAPI{}
+
 func TestRemotePublisherConn_DoesConnect(t *testing.T) {
 	topic := "/test/topic"
 	msgType := testMessageType{topic}
@@ -91,7 +124,7 @@ func TestRemotePublisherConn_RemoteReceivesData(t *testing.T) {
 	}
 }
 
-func TestSubscriber_Shutdown(t *testing.T) {
+func TestSubscriber_Run_Shutdown(t *testing.T) {
 	fields := []gengo.Field{
 		*gengo.NewField("Testing", "uint8", "u8", true, 8),
 	}
@@ -101,23 +134,41 @@ func TestSubscriber_Shutdown(t *testing.T) {
 		jsonPrealloc: 0,
 	}
 	sub := newDefaultSubscriber("testTopic", msgType, func() {})
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	nodeID := "testNode"
+	logger := modular.NewRootLogger(logrus.New())
+	log := logger.GetModuleLogger()
+	log.SetLevel(logrus.InfoLevel)
 
-	hasShutdown := make(chan struct{})
-	pass := false
+	shutdownSubscriber := make(chan struct{})
 	go func() {
-		select {
-		case <-time.After(time.Second):
-		case <-sub.shutdownChan:
-			sub.shutdownChan <- struct{}{}
-			pass = true
-		}
-		hasShutdown <- struct{}{}
+		sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, &log)
+		shutdownSubscriber <- struct{}{}
 	}()
 
-	sub.Shutdown()
-	<-hasShutdown
-	if pass == false {
-		t.Fatal("shutdown command failed to shutdown mock subscriber")
+	shutdownCaller := make(chan struct{})
+	go func() {
+		sub.Shutdown()
+		shutdownCaller <- struct{}{}
+	}()
+
+	select {
+	case <-shutdownSubscriber:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown subscriber failed")
+	}
+
+	select {
+	case <-shutdownCaller:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown response failed")
+	}
+
+	if rosAPI.unregistered == false {
+		t.Fatal("did not unregister on shutdown")
 	}
 }
 

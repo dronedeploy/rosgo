@@ -89,7 +89,7 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	sub.shutdownChan = make(chan struct{})
 	sub.disconnectedChan = make(chan string, 10)
 	sub.uri2pub = make(map[string]string)
-	sub.cancel = make(map[string]goContext.CancelFunc)
+	sub.cancel = make(map[string]goContext.CancelFunc) // TODO: move this out of here... it belongs in the run routine
 	sub.callbacks = []interface{}{callback}
 	return sub
 }
@@ -215,11 +215,10 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 
 		case <-sub.shutdownChan:
 			// Shutdown subscription goroutine.
-			logger.Debug(sub.topic, " : Receive shutdownChan")
+			logger.Debug(sub.topic, " : receive shutdownChan")
 
-			err := rosAPI.Unregister()
-			if err != nil {
-				logger.Warn(sub.topic, " : ", err)
+			if err := rosAPI.Unregister(); err != nil {
+				logger.Warn(sub.topic, " : unregister error: ", err)
 			}
 			sub.shutdownChan <- struct{}{}
 			return
@@ -228,6 +227,10 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 		}
 	}
 }
+
+// TODO:
+// Will simplify testing a lot if we are able to mock this out... something like:
+// `startPublisherSubscription`
 
 // startRemotePublisherConn creates a subscription to a remote publisher and runs it.
 func startRemotePublisherConn(ctx goContext.Context, log *modular.ModuleLogger,
