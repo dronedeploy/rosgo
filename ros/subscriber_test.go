@@ -125,27 +125,17 @@ func TestRemotePublisherConn_RemoteReceivesData(t *testing.T) {
 }
 
 func TestSubscriber_Run_Shutdown(t *testing.T) {
-	fields := []gengo.Field{
-		*gengo.NewField("Testing", "uint8", "u8", true, 8),
-	}
-	msgType := &DynamicMessageType{
-		spec:         generateTestSpec(fields), // From dynamic_message_tests.go.
-		nested:       make(map[string]*DynamicMessageType),
-		jsonPrealloc: 0,
-	}
-	sub := newDefaultSubscriber("testTopic", msgType, func() {})
+	sub := makeTestSubscriber()
 	ctx := newFakeContext()
 	jobChan := make(chan func())
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	nodeID := "testNode"
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
-	log.SetLevel(logrus.InfoLevel)
+	log := makeTestLogger()
 
 	shutdownSubscriber := make(chan struct{})
 	go func() {
-		sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, &log)
+		sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, log)
 		shutdownSubscriber <- struct{}{}
 	}()
 
@@ -172,6 +162,82 @@ func TestSubscriber_Run_Shutdown(t *testing.T) {
 	}
 }
 
+func TestSubscriber_Run_FlowControl(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	nodeID := "testNode"
+	log := makeTestLogger()
+
+	shutdownSubscriber := make(chan struct{})
+	go func() {
+		sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, log)
+		shutdownSubscriber <- struct{}{}
+	}()
+
+	sub.msgChan <- messageEvent{
+		bytes: []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	select {
+	case <-jobChan:
+	case <-time.After(time.Millisecond):
+		t.Fatal("expected job from message channel")
+	}
+
+	enableChan <- false
+
+	sub.msgChan <- messageEvent{
+		bytes: []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	select {
+	case <-jobChan:
+		t.Fatal("job received on disabled channel")
+	case <-time.After(time.Millisecond):
+	}
+
+	enableChan <- true
+
+	sub.msgChan <- messageEvent{
+		bytes: []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	select {
+	case <-jobChan:
+	case <-time.After(time.Millisecond):
+		t.Fatal("expected job from enabled channel")
+	}
+}
+
+// Test Helpers
+
+// makeTestSubscriber creates a subscriber with a simple u8[8] payload message type.
+func makeTestSubscriber() *defaultSubscriber {
+	fields := []gengo.Field{
+		*gengo.NewField("Testing", "uint8", "u8", true, 8),
+	}
+	msgType := &DynamicMessageType{
+		spec:         generateTestSpec(fields), // From dynamic_message_tests.go.
+		nested:       make(map[string]*DynamicMessageType),
+		jsonPrealloc: 0,
+	}
+	return newDefaultSubscriber("testTopic", msgType, func() {})
+}
+
+// makeTestLogger creates a module logger for testing.
+func makeTestLogger() *modular.ModuleLogger {
+	logger := modular.NewRootLogger(logrus.New())
+	log := logger.GetModuleLogger()
+	log.SetLevel(logrus.InfoLevel)
+	return &log
+}
+
 // setupRemotePublisherConnTest establishes all init values and kicks off the start function.
 func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan messageEvent, chan string) {
 	pubConn, subConn := net.Pipe()
@@ -183,17 +249,14 @@ func setupRemotePublisherConnTest(t *testing.T) (*fakeContext, net.Conn, chan me
 	}
 	ctx := newFakeContext()
 
-	logger := modular.NewRootLogger(logrus.New())
 	topic := "/test/topic"
 	nodeID := "testNode"
 	msgChan := make(chan messageEvent)
 	disconnectedChan := make(chan string)
 	msgType := testMessageType{}
+	log := makeTestLogger()
 
-	log := logger.GetModuleLogger()
-	log.SetLevel(logrus.InfoLevel)
-
-	startRemotePublisherConn(ctx, &log, testDialer, pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
+	startRemotePublisherConn(ctx, log, testDialer, pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
 
 	return ctx, pubConn, msgChan, disconnectedChan
 }
