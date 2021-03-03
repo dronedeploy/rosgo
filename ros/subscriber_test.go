@@ -172,11 +172,8 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 	log := makeTestLogger()
 	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
 
-	shutdownSubscriber := make(chan struct{})
-	go func() {
-		sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
-		shutdownSubscriber <- struct{}{}
-	}()
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
 
 	sub.msgChan <- messageEvent{
 		bytes: []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07},
@@ -216,6 +213,63 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 	}
 }
 
+func TestSubscriber_Run_JobPackaging(t *testing.T) {
+	var msg Message
+	var event MessageEvent
+	called := false
+	sub := makeTestSubscriberWithJobCallback(func(m Message, e MessageEvent) {
+		msg = m
+		event = e
+		called = true
+	})
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
+
+	bPayload := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+	sub.msgChan <- messageEvent{
+		bytes: bPayload,
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	select {
+	case job := <-jobChan:
+		job()
+	case <-time.After(time.Millisecond):
+		t.Fatal("expected job from message channel")
+	}
+
+	if called == false {
+		t.Fatal("Job callback not executed")
+	}
+
+	if dmsg, ok := msg.(*DynamicMessage); ok {
+		if b, ok := dmsg.data["u8"]; ok {
+			if bArray, ok := b.([]byte); ok {
+				if string(bArray) != string(bPayload) {
+					t.Fatalf("payload mismatch, expected %v, got %v", bPayload, bArray)
+				}
+			} else {
+				t.Fatal("expected u8 field to be byte array")
+			}
+		} else {
+			t.Fatal("expected u8 field in message data")
+		}
+	} else {
+		t.Fatal("message was not dynamic message")
+	}
+
+	if event.PublisherName != "TestPublisher" {
+		t.Fatal("invalid message event")
+	}
+}
+
 // TODO tests:
 // - job channel prioritization
 // - add publishers
@@ -226,6 +280,11 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 
 // makeTestSubscriber creates a subscriber with a simple u8[8] payload message type.
 func makeTestSubscriber() *defaultSubscriber {
+	return makeTestSubscriberWithJobCallback(func() {})
+}
+
+// makeTestSubscriberWithJobCallback creates a subscriber with a simple u8[8] payload message type and a job callback.
+func makeTestSubscriberWithJobCallback(callback interface{}) *defaultSubscriber {
 	fields := []gengo.Field{
 		*gengo.NewField("Testing", "uint8", "u8", true, 8),
 	}
@@ -234,7 +293,7 @@ func makeTestSubscriber() *defaultSubscriber {
 		nested:       make(map[string]*DynamicMessageType),
 		jsonPrealloc: 0,
 	}
-	return newDefaultSubscriber("testTopic", msgType, func() {})
+	return newDefaultSubscriber("testTopic", msgType, callback)
 }
 
 // makeTestLogger creates a module logger for testing.

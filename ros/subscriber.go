@@ -91,8 +91,6 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	sub.addCallbackChan = make(chan interface{}, 10)
 	sub.shutdownChan = make(chan struct{})
 	sub.disconnectedChan = make(chan string, 10)
-	sub.uri2pub = make(map[string]string)
-	sub.cancel = make(map[string]goContext.CancelFunc) // TODO: move this out of here... it belongs in the run routine
 	sub.callbacks = []interface{}{callback}
 	return sub
 }
@@ -129,6 +127,8 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, startSubscription startPublisherSubscription, log *modular.ModuleLogger) {
 	logger := *log
 	enabled := true
+	cancelMap := make(map[string]goContext.CancelFunc)
+	uri2pubMap := make(map[string]string)
 
 	for {
 		select {
@@ -140,9 +140,14 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			// sub.pubList = setDifference(sub.pubList, deadPubs)
 			sub.pubList = list
 			for _, pub := range deadPubs {
-				if subCancel, ok := sub.cancel[pub]; ok {
-					subCancel()
-					delete(sub.cancel, pub)
+				if cancel, ok := cancelMap[pub]; ok {
+					cancel()
+					delete(cancelMap, pub)
+				}
+				for uri, pubInMap := range uri2pubMap {
+					if pub == pubInMap {
+						delete(uri2pubMap, uri)
+					}
 				}
 			}
 
@@ -157,23 +162,23 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 
 				// TODO:
 				// Everything past here doesn't need to be in the go routine, it should be handled on receiving from the requestTopicResult channel
-				sub.uri2pub[uri] = pub
-				subCtx, subCancel := goContext.WithCancel(ctx)
-				defer subCancel()
+				uri2pubMap[uri] = pub
+				subCtx, cancel := goContext.WithCancel(ctx)
+				defer cancel()
 				// TODO:
 				// sub.pubList = append(sub.pubList, pub)
-				sub.cancel[pub] = subCancel
+				cancelMap[pub] = cancel
 				startSubscription(subCtx, uri, log)
 			}
 
-		case pubURI := <-sub.disconnectedChan:
-			logger.Debugf("Connection to %s was disconnected.", pubURI)
-			if pub, ok := sub.uri2pub[pubURI]; ok {
-				if subCancel, ok := sub.cancel[pub]; ok {
-					subCancel()
-					delete(sub.cancel, pub)
+		case uri := <-sub.disconnectedChan:
+			logger.Debugf("Connection to %s was disconnected.", uri)
+			if pub, ok := uri2pubMap[uri]; ok {
+				if cancel, ok := cancelMap[pub]; ok {
+					cancel()
+					delete(cancelMap, pub)
 				}
-				delete(sub.uri2pub, pubURI)
+				delete(uri2pubMap, uri)
 			}
 
 		case callback := <-sub.addCallbackChan:
@@ -236,10 +241,6 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 		}
 	}
 }
-
-// TODO:
-// Will simplify testing a lot if we are able to mock this out... something like:
-// `startPublisherSubscription`
 
 // startRemotePublisherConn creates a subscription to a remote publisher and runs it.
 func startRemotePublisherConn(ctx goContext.Context, dialer TCPRosDialer,
