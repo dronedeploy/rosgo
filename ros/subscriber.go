@@ -87,7 +87,7 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	sub.msgType = msgType
 	sub.msgChan = make(chan messageEvent)
 	sub.pubListChan = make(chan []string, 10)
-	sub.addCallbackChan = make(chan interface{}, 10)
+	sub.addCallbackChan = make(chan interface{})
 	sub.shutdownChan = make(chan struct{})
 	sub.disconnectedChan = make(chan string, 10)
 	sub.callbacks = []interface{}{callback}
@@ -210,11 +210,12 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 					fun := reflect.ValueOf(callback)
 					numArgsNeeded := fun.Type().NumIn()
 					if numArgsNeeded <= 2 {
-						fun.Call(args[0:numArgsNeeded])
+						fun.Call(args[:numArgsNeeded])
 					}
 				}
 			}
 			activeJobChan = jobChan
+
 		case activeJobChan <- latestJob:
 			logger.Debug(sub.topic, " : Callback job enqueued.")
 			activeJobChan = nil

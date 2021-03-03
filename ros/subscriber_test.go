@@ -182,7 +182,7 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 
 	select {
 	case <-jobChan:
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("expected job from message channel")
 	}
 
@@ -196,7 +196,7 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 	select {
 	case <-jobChan:
 		t.Fatal("job received on disabled channel")
-	case <-time.After(time.Millisecond):
+	case <-time.After(5 * time.Millisecond):
 	}
 
 	enableChan <- true
@@ -208,7 +208,7 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 
 	select {
 	case <-jobChan:
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("expected job from enabled channel")
 	}
 }
@@ -241,7 +241,7 @@ func TestSubscriber_Run_JobPackaging(t *testing.T) {
 	select {
 	case job := <-jobChan:
 		job()
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("expected job from message channel")
 	}
 
@@ -295,7 +295,7 @@ func TestSubscriber_Run_JobCancellation(t *testing.T) {
 
 	select {
 	case <-shutdownSubscriber:
-	case <-time.After(5 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("expected shutdown")
 	}
 
@@ -337,6 +337,52 @@ func TestSubscriber_Run_JobDisable(t *testing.T) {
 	}
 }
 
+func TestSubscriber_Run_JobCallbacks(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
+
+	// Send new callback functions to subscription.
+	var event MessageEvent
+	cb1 := func(m Message, e MessageEvent) {
+		event = e
+	}
+	cb2Called := false
+	cb2 := func(m Message, e MessageEvent) {
+		cb2Called = true
+	}
+
+	sub.addCallbackChan <- cb1
+	sub.addCallbackChan <- cb2
+
+	bPayload := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
+	sub.msgChan <- messageEvent{
+		bytes: bPayload,
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	select {
+	case job := <-jobChan:
+		job()
+	case <-time.After(time.Second):
+		t.Fatalf("expected to receive job")
+	}
+
+	if event.PublisherName != "TestPublisher" {
+		t.Fatal("cb1 not called when executing job")
+	}
+	if cb2Called == false {
+		t.Fatal("cb2 not called when executing job")
+	}
+}
+
 func TestSubscriber_Run_JobPrioritization(t *testing.T) {
 	var msg Message
 	sub := makeTestSubscriberWithJobCallback(func(m Message, e MessageEvent) {
@@ -373,7 +419,7 @@ func TestSubscriber_Run_JobPrioritization(t *testing.T) {
 	select {
 	case job := <-jobChan:
 		job()
-	case <-time.After(time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("expected job from message channel")
 	}
 
