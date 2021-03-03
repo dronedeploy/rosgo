@@ -23,20 +23,20 @@ type subscriptionChannels struct {
 
 // SubscriberRos interface provides methods to decouple ROS API calls from the subscriber itself.
 type SubscriberRos interface {
-	RequestTopicUri(pub string) (string, error)
+	RequestTopicURI(pub string) (string, error)
 	Unregister() error
 }
 
-// SubscriberRosApi implements SubscriberRos using callRosAPI rpc calls.
-type SubscriberRosApi struct {
+// SubscriberRosAPI implements SubscriberRos using callRosAPI rpc calls.
+type SubscriberRosAPI struct {
 	topic      string
 	nodeID     string
 	nodeAPIURI string
 	masterURI  string
 }
 
-// RequestTopicUri requests the URI of a given topic from a publisher.
-func (a *SubscriberRosApi) RequestTopicUri(pub string) (string, error) {
+// RequestTopicURI requests the URI of a given topic from a publisher.
+func (a *SubscriberRosAPI) RequestTopicURI(pub string) (string, error) {
 	protocols := []interface{}{[]interface{}{"TCPROS"}}
 	result, err := callRosAPI(pub, "requestTopic", a.nodeID, a.topic, protocols)
 
@@ -57,12 +57,12 @@ func (a *SubscriberRosApi) RequestTopicUri(pub string) (string, error) {
 }
 
 // Unregister removes a subscriber from a topic.
-func (a *SubscriberRosApi) Unregister() error {
+func (a *SubscriberRosAPI) Unregister() error {
 	_, err := callRosAPI(a.masterURI, "unregisterSubscriber", a.nodeID, a.topic, a.nodeAPIURI)
 	return err
 }
 
-var _ SubscriberRos = &SubscriberRosApi{}
+var _ SubscriberRos = &SubscriberRosAPI{}
 
 // The subscriber object runs in own goroutine (start).
 type defaultSubscriber struct {
@@ -95,7 +95,6 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 }
 
 func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log *modular.ModuleLogger) {
-	enabled := true
 	ctx, cancel := goContext.WithCancel(goContext.Background())
 	defer cancel()
 	logger := *log
@@ -107,18 +106,21 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		logger.Debug(sub.topic, " : defaultSubscriber.start exit")
 	}()
 
-	// TODO: Construct the SubscriberRosApi here
-	api := SubscriberRosApi{
+	// Construct the SubscriberRosApi.
+	rosAPI := &SubscriberRosAPI{
 		topic:      sub.topic,
 		nodeID:     nodeID,
 		masterURI:  masterURI,
 		nodeAPIURI: nodeAPIURI,
 	}
 
-	// TODO: break out the following into a run function - run will be put under test
-	// sub.run(ctx, jobChan, enableChan, rosApi, log)
-	//
-	// func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosApi SubscriberRos, log *modular.ModuleLogger) {
+	// Setup is complete, run the subscriber.
+	sub.run(ctx, jobChan, enableChan, rosAPI, nodeID, log)
+}
+
+func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, nodeID string, log *modular.ModuleLogger) {
+	logger := *log
+	enabled := true
 
 	for {
 		select {
@@ -139,32 +141,12 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 			// TODO:
 			// make into a go routine, give it a channel requestTopicResult chan (pub string, uri string, err error)
 			for _, pub := range newPubs {
-				// TODO:
-				// make this an implementation of SubscriberRos.RequestTopicUri(pub)
-				uri, err := api.RequestTopicUri(pub)
+				uri, err := rosAPI.RequestTopicURI(pub)
 				if err != nil {
 					logger.Error("uri request failed, topic : ", sub.topic, ", error : ", err)
 					continue
 				}
-				// protocols := []interface{}{[]interface{}{"TCPROS"}}
-				// result, err := callRosAPI(pub, "requestTopic", nodeID, sub.topic, protocols)
 
-				// if err != nil {
-				// 	logger.Error(sub.topic, " : ", err)
-				// 	continue
-				// }
-
-				// protocolParams := result.([]interface{})
-				// for _, x := range protocolParams {
-				// 	logger.Debug(sub.topic, " : ", x)
-				// }
-
-				// name := protocolParams[0].(string)
-				// if name == "TCPROS" {
-
-				// 	addr := protocolParams[1].(string)
-				// 	port := protocolParams[2].(int32)
-				// 	uri := fmt.Sprintf("%s:%d", addr, port)
 				// TODO:
 				// Everything past here doesn't need to be in the go routine, it should be handled on receiving from the requestTopicResult channel
 				sub.uri2pub[uri] = pub
@@ -174,9 +156,6 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 				// sub.pubList = append(sub.pubList, pub)
 				sub.cancel[pub] = subCancel
 				startRemotePublisherConn(subCtx, log, &TCPRosNetDialer{}, uri, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan)
-				// } else {
-				// 	logger.Warn(sub.topic, " : rosgo does not support protocol: ", name)
-				// }
 			}
 
 		case callback := <-sub.addCallbackChan:
@@ -237,12 +216,8 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		case <-sub.shutdownChan:
 			// Shutdown subscription goroutine.
 			logger.Debug(sub.topic, " : Receive shutdownChan")
-			cancel() // Shutdown context
-			// TODO:
-			// spin a go routine for this so it doesn't block
-			// should be an impl of SubscriberRos.Unregister()
-			err := api.Unregister()
-			// _, err := callRosAPI(masterURI, "unregisterSubscriber", nodeID, sub.topic, nodeAPIURI)
+
+			err := rosAPI.Unregister()
 			if err != nil {
 				logger.Warn(sub.topic, " : ", err)
 			}
