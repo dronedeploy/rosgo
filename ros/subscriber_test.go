@@ -17,6 +17,7 @@ import (
 
 // SubscriberRosAPI implements SubscriberRos using callRosAPI rpc calls.
 type fakeSubscriberRos struct {
+	delay         time.Duration
 	pub           []string
 	uri           string
 	uriErr        error
@@ -31,12 +32,16 @@ func newFakeSubscriberRos() *fakeSubscriberRos {
 	a.uriErr = nil
 	a.unregistered = false
 	a.unregisterErr = nil
+	a.delay = 0
 	return a
 }
 
 // RequestTopicURI requests the URI of a given topic from a publisher.
 func (a *fakeSubscriberRos) RequestTopicURI(pub string) (string, error) {
 	a.pub = append(a.pub, pub)
+	if a.delay != 0 {
+		<-time.After(a.delay)
+	}
 	return a.uri, a.uriErr
 }
 
@@ -159,6 +164,7 @@ func TestSubscriber_Run_Shutdown(t *testing.T) {
 		t.Fatal("shutdown response failed")
 	}
 
+	<-time.After(10 * time.Millisecond) // give the unregister call a moment
 	if rosAPI.unregistered == false {
 		t.Fatal("did not unregister on shutdown")
 	}
@@ -451,10 +457,182 @@ func TestSubscriber_Run_JobPrioritization(t *testing.T) {
 	}
 }
 
-// TODO tests:
-// - add publishers
-// - remove publishers (through disconnection)
-// -
+func TestSubscriber_Run_Publishers(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	rosAPI.uri = "fakeURI"
+	log := makeTestLogger()
+	pubURIs := []string{}
+	subscriptionContext := []goContext.Context{}
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {
+		pubURIs = append(pubURIs, pubURI)
+		subscriptionContext = append(subscriptionContext, ctx)
+	}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+
+	// Send publishers.
+	pubSend := []string{"pub1", "pub2"}
+	sub.pubListChan <- pubSend
+
+	// Delay so publisher list is picked up.
+	<-time.After(20 * time.Millisecond)
+
+	if reflect.DeepEqual(sub.pubList, pubSend) == false {
+		t.Fatalf("expected pubList to match sent publishers, got %v", sub.pubList)
+	}
+	if reflect.DeepEqual(pubURIs, []string{"fakeURI", "fakeURI"}) == false {
+		t.Fatalf("expected startSubscriptions to receive URIs, got %v", pubURIs)
+	}
+
+	// Remove second publisher, add a third publisher.
+	rosAPI.uri = "fakeURI3"
+	pubSend = []string{"pub1", "pub3"}
+	sub.pubListChan <- pubSend
+
+	// Delay so publisher list is picked up.
+	<-time.After(20 * time.Millisecond)
+
+	if reflect.DeepEqual(sub.pubList, pubSend) == false {
+		t.Fatalf("expected pubList to match sent publishers, got %v", sub.pubList)
+	}
+	if reflect.DeepEqual(pubURIs, []string{"fakeURI", "fakeURI", "fakeURI3"}) == false {
+		t.Fatalf("expected startSubscriptions to receive URIs, got %v", pubURIs)
+	}
+	// Check second context is cancelled.
+	select {
+	case <-subscriptionContext[0].Done():
+		t.Fatalf("unexpected cancellation of subscription 1")
+	case <-subscriptionContext[1].Done():
+	case <-subscriptionContext[2].Done():
+		t.Fatalf("unexpected cancellation of subscription 3")
+	default:
+		t.Fatalf("expected cancellation of subscription 2")
+	}
+
+	// Make subscription 3 report it has disconnected.
+	sub.disconnectedChan <- "fakeURI3"
+	<-time.After(20 * time.Millisecond)
+
+	// Check third context is cancelled.
+	select {
+	case <-subscriptionContext[0].Done():
+		t.Fatalf("unexpected cancellation of subscription 1")
+	case <-subscriptionContext[2].Done():
+	default:
+		t.Fatalf("expected cancellation of subscription 3")
+	}
+
+	if reflect.DeepEqual(sub.pubList, []string{"pub1"}) == false {
+		t.Fatalf("expected pubList to match current publishers, got %v", sub.pubList)
+	}
+
+	// Add pub3 again
+	sub.pubListChan <- pubSend
+
+	// Delay so publisher list is picked up.
+	<-time.After(20 * time.Millisecond)
+
+	if reflect.DeepEqual(sub.pubList, pubSend) == false {
+		t.Fatalf("expected pubList to match sent publishers, got %v", sub.pubList)
+	}
+	if reflect.DeepEqual(pubURIs, []string{"fakeURI", "fakeURI", "fakeURI3", "fakeURI3"}) == false {
+		t.Fatalf("expected startSubscriptions to receive URIs, got %v", pubURIs)
+	}
+
+	// Shutdown the subscription - checks that all subscriptions are cancelled.
+	sub.Shutdown()
+
+	// Give deferred cancels a chance to trigger.
+	<-time.After(20 * time.Millisecond)
+
+	// Check first context is cancelled.
+	select {
+	case <-subscriptionContext[0].Done():
+	default:
+		t.Fatalf("expected cancellation of subscription 1")
+	}
+
+	// Check third context is cancelled.
+	select {
+	case <-subscriptionContext[3].Done():
+	default:
+		t.Fatalf("expected cancellation of subscription 3")
+	}
+}
+
+func TestSubscriber_Run_AddPublishersDontBlock(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	rosAPI.uri = "fakeURI"
+	rosAPI.delay = 100 * time.Millisecond
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {
+	}
+
+	shutdownSubscriber := make(chan struct{})
+	go func() {
+		sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+		shutdownSubscriber <- struct{}{}
+	}()
+
+	// Send publishers.
+	pubSend := []string{"pub1", "pub2"}
+	sub.pubListChan <- pubSend
+
+	// Shutdown the subscription - checks that all subscriptions are cancelled.
+	go sub.Shutdown()
+
+	// Check first context is cancelled
+	select {
+	case <-shutdownSubscriber:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatalf("expected subscriber to shutdown")
+	}
+}
+
+func TestSubscriber_Run_AddPublisherOverride(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	rosAPI.uri = "fakeURI"
+	rosAPI.delay = 50 * time.Millisecond
+	log := makeTestLogger()
+	subscriptionStartCount := 0
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {
+		subscriptionStartCount++
+	}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
+
+	// Send publishers.
+	pubSend := []string{"pub1", "pub2"}
+	sub.pubListChan <- pubSend
+
+	// Override publishers
+	pubSend = []string{"pub3"}
+	sub.pubListChan <- pubSend
+
+	// wait for published channels to take effect
+	<-time.After(60 * time.Millisecond)
+
+	if reflect.DeepEqual(sub.pubList, []string{"pub3"}) == false {
+		t.Fatalf("expected pubList to match sent publishers, got %v", sub.pubList)
+	}
+
+	if subscriptionStartCount != 1 {
+		t.Fatalf("started %d subscriptions, expected 1", subscriptionStartCount)
+	}
+}
 
 func TestSetDifference(t *testing.T) {
 	testSetDifference := func(lhs []string, rhs []string, expected []string) {
@@ -473,7 +651,6 @@ func TestSetDifference(t *testing.T) {
 	testSetDifference([]string{"a", "a", "b", "b"}, []string{"b"}, []string{"a"})
 	testSetDifference([]string{"a", "a", "b", "b"}, []string{"a"}, []string{"b"})
 	testSetDifference([]string{"a", "b", "b"}, []string{"a", "a"}, []string{"b"})
-
 }
 
 // Test Helpers
@@ -500,7 +677,7 @@ func makeTestSubscriberWithJobCallback(callback interface{}) *defaultSubscriber 
 func makeTestLogger() *modular.ModuleLogger {
 	logger := modular.NewRootLogger(logrus.New())
 	log := logger.GetModuleLogger()
-	log.SetLevel(logrus.InfoLevel)
+	log.SetLevel(logrus.DebugLevel)
 	return &log
 }
 

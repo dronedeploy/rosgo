@@ -63,6 +63,13 @@ func (a *SubscriberRosAPI) Unregister() error {
 
 var _ SubscriberRos = &SubscriberRosAPI{}
 
+// requestTopicResult represents the important data returned from a requestTopic call.
+type requestTopicResult struct {
+	pub string
+	uri string
+	err error
+}
+
 // startPublosherSubscription defines a function interface for starting a subscription in run.
 type startPublisherSubscription func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger)
 
@@ -86,10 +93,10 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	sub.topic = topic
 	sub.msgType = msgType
 	sub.msgChan = make(chan messageEvent)
-	sub.pubListChan = make(chan []string, 10)
+	sub.pubListChan = make(chan []string)
 	sub.addCallbackChan = make(chan interface{})
 	sub.shutdownChan = make(chan struct{})
-	sub.disconnectedChan = make(chan string, 10)
+	sub.disconnectedChan = make(chan string)
 	sub.callbacks = []interface{}{callback}
 	return sub
 }
@@ -132,15 +139,20 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 	var activeJobChan chan func()
 	var latestJob func()
 
+	requestTopicChan := make(chan requestTopicResult)
+
+	var newPubsCancel goContext.CancelFunc
+
 	for {
 		select {
 		case list := <-sub.pubListChan:
+			if newPubsCancel != nil {
+				newPubsCancel()
+			}
 			logger.Debug(sub.topic, " : Receive pubListChan")
 			deadPubs := setDifference(sub.pubList, list)
 			newPubs := setDifference(list, sub.pubList)
-			// TODO:
-			// sub.pubList = setDifference(sub.pubList, deadPubs)
-			sub.pubList = list
+			sub.pubList = setDifference(sub.pubList, deadPubs)
 			for _, pub := range deadPubs {
 				if cancel, ok := cancelMap[pub]; ok {
 					cancel()
@@ -153,25 +165,45 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				}
 			}
 
-			// TODO:
-			// make into a go routine, give it a channel requestTopicResult chan (pub string, uri string, err error)
-			for _, pub := range newPubs {
-				uri, err := rosAPI.RequestTopicURI(pub)
-				if err != nil {
-					logger.Error("uri request failed, topic : ", sub.topic, ", error : ", err)
-					continue
-				}
+			var newPubsCtx goContext.Context
+			newPubsCtx, newPubsCancel = goContext.WithCancel(ctx)
+			defer newPubsCancel()
 
-				// TODO:
-				// Everything past here doesn't need to be in the go routine, it should be handled on receiving from the requestTopicResult channel
-				uri2pubMap[uri] = pub
-				subCtx, cancel := goContext.WithCancel(ctx)
-				defer cancel()
-				// TODO:
-				// sub.pubList = append(sub.pubList, pub)
-				cancelMap[pub] = cancel
-				startSubscription(subCtx, uri, log)
+			// Handle requesting URIs in a seperate go routine
+			go func(thisCtx goContext.Context) {
+				for _, pub := range newPubs {
+					uri, err := rosAPI.RequestTopicURI(pub)
+
+					// Force the context cancellation to take priority.
+					select {
+					case <-thisCtx.Done():
+						return
+					default:
+					}
+
+					select {
+					case <-thisCtx.Done():
+						return
+					case requestTopicChan <- requestTopicResult{pub, uri, err}:
+					}
+				}
+			}(newPubsCtx)
+
+		case requestTopicData := <-requestTopicChan:
+			pub := requestTopicData.pub
+			uri := requestTopicData.uri
+
+			if err := requestTopicData.err; err != nil {
+				logger.Error("uri request failed, topic : ", sub.topic, ", error : ", err)
+				continue
 			}
+
+			uri2pubMap[uri] = pub
+			subCtx, cancel := goContext.WithCancel(ctx)
+			defer cancel()
+			sub.pubList = append(sub.pubList, pub)
+			cancelMap[pub] = cancel
+			startSubscription(subCtx, uri, log)
 
 		case uri := <-sub.disconnectedChan:
 			logger.Debugf("Connection to %s was disconnected.", uri)
@@ -181,6 +213,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 					delete(cancelMap, pub)
 				}
 				delete(uri2pubMap, uri)
+				sub.pubList = setDifference(sub.pubList, []string{pub})
 			}
 
 		case callback := <-sub.addCallbackChan:
