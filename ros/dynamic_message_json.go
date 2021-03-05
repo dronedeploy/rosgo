@@ -5,6 +5,7 @@ package ros
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"strconv"
@@ -694,6 +695,7 @@ func unmarshalSecNSecObject(marshalled []byte) (sec uint32, nsec uint32, err err
 
 	// Expects the object to be {"sec":n,"nsec":n} (although, order doesn't matter).
 	err = jsonparser.ObjectEach(marshalled, func(k []byte, v []byte, dataType jsonparser.ValueType, offset int) error {
+		fmt.Printf("unmarshalSecNSecObject:  k: %+v, v: %+v, dataType: %+v, offset: %v\n", k, v, dataType, offset)
 		var err error
 		switch string(k) {
 		case "sec", "secs", "Sec", "Secs":
@@ -719,6 +721,7 @@ func unmarshalSecNSecObject(marshalled []byte) (sec uint32, nsec uint32, err err
 			return 0, 0, errors.Wrap(errors.New("object had no NSec field"), "obj: "+string(marshalled))
 		}
 	}
+	fmt.Printf("returning: sec: %v, nsec: %v\n", sec, nsec)
 	return uint32(tempSec), uint32(tempNSec), err
 }
 
