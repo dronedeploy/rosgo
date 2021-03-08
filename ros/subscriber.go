@@ -45,12 +45,24 @@ func (a *SubscriberRosAPI) RequestTopicURI(pub string) (string, error) {
 
 	protocolParams := result.([]interface{})
 
+	if n := len(protocolParams); n < 3 {
+		return "", errors.New("invalid requestTopic result with length " + fmt.Sprint(n))
+	}
+
 	if name := protocolParams[0].(string); name != "TCPROS" {
 		return "", errors.New("rosgo does not support protocol: " + name)
 	}
 
-	addr := protocolParams[1].(string)
-	port := protocolParams[2].(int32)
+	addr, ok := protocolParams[1].(string)
+	if ok == false {
+		return "", errors.New("failed to extract addr from requestTopic result")
+	}
+
+	port, ok := protocolParams[2].(int32)
+	if ok == false {
+		return "", errors.New("failed to extract port from requestTopic result")
+	}
+
 	uri := fmt.Sprintf("%s:%d", addr, port)
 	return uri, nil
 }
@@ -70,7 +82,7 @@ type requestTopicResult struct {
 	err error
 }
 
-// startPublosherSubscription defines a function interface for starting a subscription in run.
+// startPublisherSubscription defines a function interface for starting a subscription.
 type startPublisherSubscription func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger)
 
 // The subscriber object runs in own goroutine (start).
@@ -121,7 +133,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		nodeAPIURI: nodeAPIURI,
 	}
 
-	// Decouples a bunch of implementation details from the actual run logic.
+	// Decouples the implementation details of starting a subscription from the run loop.
 	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {
 		startRemotePublisherConn(ctx, &TCPRosNetDialer{}, pubURI, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan, log)
 	}
@@ -139,15 +151,15 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 	var activeJobChan chan func()
 	var latestJob func()
 
-	requestTopicChan := make(chan requestTopicResult)
-
-	var newPubsCancel goContext.CancelFunc
+	var requestTopicChan chan requestTopicResult
+	var requestTopicCancel goContext.CancelFunc
 
 	for {
 		select {
 		case list := <-sub.pubListChan:
-			if newPubsCancel != nil {
-				newPubsCancel()
+			// Cancel any current fetches for new publishers.
+			if requestTopicCancel != nil {
+				requestTopicCancel()
 			}
 			logger.Debug(sub.topic, " : Receive pubListChan")
 			deadPubs := setDifference(sub.pubList, list)
@@ -165,29 +177,26 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				}
 			}
 
-			var newPubsCtx goContext.Context
-			newPubsCtx, newPubsCancel = goContext.WithCancel(ctx)
-			defer newPubsCancel()
+			// Make a new request topic channel - meaning pending old requests will get ignored.
+			requestTopicChan = make(chan requestTopicResult)
 
-			// Handle requesting URIs in a seperate go routine
-			go func(thisCtx goContext.Context) {
-				for _, pub := range newPubs {
+			var requestTopicCtx goContext.Context
+			requestTopicCtx, requestTopicCancel = goContext.WithCancel(ctx)
+			defer requestTopicCancel()
+
+			// Handle requesting URIs in a seperate go routine.
+			go func(thisCtx goContext.Context, publishers []string, resultChan chan requestTopicResult) {
+				for _, pub := range publishers {
 					uri, err := rosAPI.RequestTopicURI(pub)
 
-					// Force the context cancellation to take priority.
+					// Attempt to update the main loop with new results.
 					select {
 					case <-thisCtx.Done():
 						return
-					default:
-					}
-
-					select {
-					case <-thisCtx.Done():
-						return
-					case requestTopicChan <- requestTopicResult{pub, uri, err}:
+					case resultChan <- requestTopicResult{pub, uri, err}:
 					}
 				}
-			}(newPubsCtx)
+			}(requestTopicCtx, newPubs, requestTopicChan)
 
 		case requestTopicData := <-requestTopicChan:
 			pub := requestTopicData.pub
@@ -299,7 +308,7 @@ func setDifference(lhs []string, rhs []string) []string {
 			result = append(result, entry)
 		}
 	}
-	// Dedup
+	// Dedup - remove duplicatees.
 	for i, entry := range result {
 		for j := i + 1; j < len(result); j++ {
 			if entry == result[j] {

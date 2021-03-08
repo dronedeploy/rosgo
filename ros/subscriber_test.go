@@ -164,7 +164,7 @@ func TestSubscriber_Run_Shutdown(t *testing.T) {
 		t.Fatal("shutdown response failed")
 	}
 
-	<-time.After(10 * time.Millisecond) // give the unregister call a moment
+	<-time.After(10 * time.Millisecond) // Give the unregister call a moment.
 	if rosAPI.unregistered == false {
 		t.Fatal("did not unregister on shutdown")
 	}
@@ -530,7 +530,7 @@ func TestSubscriber_Run_Publishers(t *testing.T) {
 		t.Fatalf("expected pubList to match current publishers, got %v", sub.pubList)
 	}
 
-	// Add pub3 again
+	// Add pub3 back again.
 	sub.pubListChan <- pubSend
 
 	// Delay so publisher list is picked up.
@@ -589,7 +589,7 @@ func TestSubscriber_Run_AddPublishersDontBlock(t *testing.T) {
 	// Shutdown the subscription - checks that all subscriptions are cancelled.
 	go sub.Shutdown()
 
-	// Check first context is cancelled
+	// Check first context is cancelled.
 	select {
 	case <-shutdownSubscriber:
 	case <-time.After(50 * time.Millisecond):
@@ -614,18 +614,19 @@ func TestSubscriber_Run_AddPublisherOverride(t *testing.T) {
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
 
+	pubSend1 := []string{"pub1", "pub2"}
+	pubSend2 := []string{"pub3"}
+
 	// Send publishers.
-	pubSend := []string{"pub1", "pub2"}
-	sub.pubListChan <- pubSend
+	sub.pubListChan <- pubSend1
 
 	// Override publishers
-	pubSend = []string{"pub3"}
-	sub.pubListChan <- pubSend
+	sub.pubListChan <- pubSend2
 
-	// wait for published channels to take effect
+	// Wait for published channels to take effect.
 	<-time.After(60 * time.Millisecond)
 
-	if reflect.DeepEqual(sub.pubList, []string{"pub3"}) == false {
+	if reflect.DeepEqual(sub.pubList, pubSend2) == false {
 		t.Fatalf("expected pubList to match sent publishers, got %v", sub.pubList)
 	}
 
@@ -653,7 +654,7 @@ func TestSetDifference(t *testing.T) {
 	testSetDifference([]string{"a", "b", "b"}, []string{"a", "a"}, []string{"b"})
 }
 
-// Test Helpers
+// Test Helpers.
 
 // makeTestSubscriber creates a subscriber with a simple u8[8] payload message type.
 func makeTestSubscriber() *defaultSubscriber {
