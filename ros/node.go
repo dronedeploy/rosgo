@@ -231,7 +231,7 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 			node.okMutex.Unlock()
 		}()
 	}
-	node.jobChan = make(chan func(), 100)
+	node.jobChan = make(chan func())
 
 	logger.Debugf("Master URI = %s", node.masterURI)
 

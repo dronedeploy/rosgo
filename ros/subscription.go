@@ -295,7 +295,7 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 			switch rResult {
 			case readResultOk:
 				if activeMsgChan != nil {
-					logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("stale message dropped")
+					logger.WithFields(logrus.Fields{"topic": s.topic}).Trace("stale message dropped")
 				}
 				s.event.ReceiptTime = time.Now()
 				latestMessage = messageEvent{bytes: tcpResult.Buf, event: s.event}
