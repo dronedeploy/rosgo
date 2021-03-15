@@ -554,6 +554,245 @@ func TestDynamicMessage_marshalJSON_u8Array(t *testing.T) {
 	}
 }
 
+func TestDynamicMessage_marshalTimeFormats(t *testing.T) {
+
+	testCases := []struct {
+		fields     []gengo.Field
+		marshalled string
+		data       map[string]interface{}
+	}{
+		{
+			// Standard roscpp Time format
+			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "stamp", false, -1)},
+			marshalled: `{"stamp":{"sec":1614894959,"nsec":184787297}}`,
+			data:       map[string]interface{}{"stamp": NewTime(1614894959, 184787297)},
+		},
+		{
+			// rospy Time Format
+			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "stamp", false, -1)},
+			marshalled: `{"stamp":{"secs":1614894959,"nsecs":184787297}}`,
+			data:       map[string]interface{}{"stamp": NewTime(1614894959, 184787297)},
+		},
+		{
+			// Old Rocos Time Format
+			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "stamp", false, -1)},
+			marshalled: `{"stamp":{"Sec":1614894959,"NSec":184787297}}`,
+			data:       map[string]interface{}{"stamp": NewTime(1614894959, 184787297)},
+		},
+		{
+			// Old Rocos Time Format Plural
+			fields:     []gengo.Field{*gengo.NewField("Testing", "time", "stamp", false, -1)},
+			marshalled: `{"stamp":{"Secs":1614894959,"NSecs":184787297}}`,
+			data:       map[string]interface{}{"stamp": NewTime(1614894959, 184787297)},
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		testMessageType := &DynamicMessageType{
+			spec:         generateTestSpec(testCase.fields),
+			nested:       make(map[string]*DynamicMessageType),
+			jsonPrealloc: 0,
+		}
+
+		testMessage := &DynamicMessage{
+			dynamicType: testMessageType,
+			data:        testCase.data,
+		}
+
+		marshalled, err := json.Marshal(testMessage)
+		if err != nil {
+			t.Fatalf("failed to marshal dynamic message\nerr: %v", err)
+		}
+
+		// Test unmarshalling using two different sets of bytes:
+		// 1) the marshalled bytes above.
+		// 2) the predefined bytes string in testCase
+
+		// 1) Unmarshal using the marshalled bytes.
+		unmarshalledMessage := testMessageType.NewDynamicMessage()
+		if err := json.Unmarshal(marshalled, unmarshalledMessage); err != nil {
+			t.Fatalf("failed to unmarshal dynamic message\n json: %v\nerr: %v", string(marshalled), err)
+		}
+		if reflect.DeepEqual(testCase.data, unmarshalledMessage.data) == false {
+			t.Fatalf("unmarshalled data did not match expected\n unmarshalled: %v\n expected: %v", unmarshalledMessage.data, testMessage.data)
+		}
+
+		// 2) Now use the test case marshalled string.
+		unmarshalledMessage = testMessageType.NewDynamicMessage()
+		if err := json.Unmarshal([]byte(testCase.marshalled), unmarshalledMessage); err != nil {
+			t.Fatalf("failed to unmarshal dynamic message\n json: %v\nerr: %v", testCase.marshalled, err)
+		}
+		if reflect.DeepEqual(testCase.data, unmarshalledMessage.data) == false {
+			t.Fatalf("unmarshalled data did not match expected\n unmarshalled: %v\n expected: %v", unmarshalledMessage.data, testMessage.data)
+		}
+	}
+}
+
+func TestDynamicMessage_marshalDurationFormats(t *testing.T) {
+
+	testCases := []struct {
+		fields     []gengo.Field
+		marshalled string
+		data       map[string]interface{}
+	}{
+		{
+			// Standard roscpp Duration format
+			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, -1)},
+			marshalled: `{"d":{"sec":1614894959,"nsec":184787297}}`,
+			data:       map[string]interface{}{"d": NewDuration(1614894959, 184787297)},
+		},
+		{
+			// rospy Duration Format
+			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, -1)},
+			marshalled: `{"d":{"secs":1614894959,"nsecs":184787297}}`,
+			data:       map[string]interface{}{"d": NewDuration(1614894959, 184787297)},
+		},
+		{
+			// Old Rocos Duration Format
+			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, -1)},
+			marshalled: `{"d":{"Sec":1614894959,"NSec":184787297}}`,
+			data:       map[string]interface{}{"d": NewDuration(1614894959, 184787297)},
+		},
+		{
+			// Old Rocos Duration Format Plural
+			fields:     []gengo.Field{*gengo.NewField("Testing", "duration", "d", false, -1)},
+			marshalled: `{"d":{"Secs":1614894959,"NSecs":184787297}}`,
+			data:       map[string]interface{}{"d": NewDuration(1614894959, 184787297)},
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		testMessageType := &DynamicMessageType{
+			spec:         generateTestSpec(testCase.fields),
+			nested:       make(map[string]*DynamicMessageType),
+			jsonPrealloc: 0,
+		}
+
+		testMessage := &DynamicMessage{
+			dynamicType: testMessageType,
+			data:        testCase.data,
+		}
+
+		marshalled, err := json.Marshal(testMessage)
+		if err != nil {
+			t.Fatalf("failed to marshal dynamic message\nerr: %v", err)
+		}
+
+		// Test unmarshalling using two different sets of bytes:
+		// 1) the marshalled bytes above.
+		// 2) the predefined bytes string in testCase
+
+		// 1) Unmarshal using the marshalled bytes.
+		unmarshalledMessage := testMessageType.NewDynamicMessage()
+		if err := json.Unmarshal(marshalled, unmarshalledMessage); err != nil {
+			t.Fatalf("failed to unmarshal dynamic message\n json: %v\nerr: %v", string(marshalled), err)
+		}
+		if reflect.DeepEqual(testCase.data, unmarshalledMessage.data) == false {
+			t.Fatalf("unmarshalled data did not match expected\n unmarshalled: %v\n expected: %v", unmarshalledMessage.data, testMessage.data)
+		}
+
+		// 2) Now use the test case marshalled string.
+		unmarshalledMessage = testMessageType.NewDynamicMessage()
+		if err := json.Unmarshal([]byte(testCase.marshalled), unmarshalledMessage); err != nil {
+			t.Fatalf("failed to unmarshal dynamic message\n json: %v\nerr: %v", testCase.marshalled, err)
+		}
+		if reflect.DeepEqual(testCase.data, unmarshalledMessage.data) == false {
+			t.Fatalf("unmarshalled data did not match expected\n unmarshalled: %v\n expected: %v", unmarshalledMessage.data, testMessage.data)
+		}
+	}
+}
+
+// TestDynamicMessage_marshalHeader tests the cpp and python header formats.
+func TestDynamicMessage_marshalHeader(t *testing.T) {
+	headerType, err := NewDynamicMessageType("Header")
+	if err != nil {
+		t.Skip("test skipped because ROS environment not set up")
+		return
+	}
+
+	testCases := []struct {
+		name       string
+		frame_id   string
+		seq        uint32
+		stamp      Time
+		marshalled string
+	}{
+		{
+			name:       "standard_c++_format",
+			frame_id:   "map",
+			seq:        0,
+			stamp:      NewTime(1614894959, 184787297),
+			marshalled: `{"frame_id":"map","seq":0,"stamp":{"sec":1614894959,"nsec":184787297}}`,
+		},
+		{
+			name:       "python_format",
+			frame_id:   "map",
+			seq:        0,
+			stamp:      NewTime(1614894959, 184787297),
+			marshalled: `{"frame_id":"map","seq":0,"stamp":{"secs":1614894959,"nsecs":184787297}}`,
+		},
+		{
+			name:       "old_rocos_format",
+			frame_id:   "map",
+			seq:        0,
+			stamp:      NewTime(1614894959, 184787297),
+			marshalled: `{"frame_id":"map","seq":0,"stamp":{"Sec":1614894959,"NSec":184787297}}`,
+		},
+		{
+			name:       "old_rocos_format_plural",
+			frame_id:   "map",
+			seq:        0,
+			stamp:      NewTime(1614894959, 184787297),
+			marshalled: `{"frame_id":"map","seq":0,"stamp":{"Secs":1614894959,"NSecs":184787297}}`,
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		testMessage := headerType.NewDynamicMessage()
+		testMessage.data["frame_id"] = testCase.frame_id
+		testMessage.data["seq"] = testCase.seq
+		testMessage.data["stamp"] = testCase.stamp
+
+		marshalled, err := json.Marshal(testMessage)
+		if err != nil {
+			t.Fatalf("failed to marshal dynamic message\n expected: %v\nerr: %v", testCase.marshalled, err)
+		}
+
+		// Test unmarshalling using two different sets of bytes:
+		// 1) the marshalled bytes above.
+		// 2) the predefined bytes string in testCase
+
+		// 1) Unmarshal using the marshalled bytes.
+		unmarshalledMessage := headerType.NewDynamicMessage()
+		if err := json.Unmarshal(marshalled, unmarshalledMessage); err != nil {
+			t.Fatalf("failed to unmarshal dynamic message\n json: %v\nerr: %v", string(marshalled), err)
+		}
+		for key := range testMessage.data {
+			original := testMessage.data[key]
+			unmarshalled := unmarshalledMessage.data[key]
+			if reflect.DeepEqual(original, unmarshalled) == false {
+				t.Fatalf("original and unmarshalled data mismatch for test case %s. \n Original: %v \n Unmarshalled: %v \n json: %v", testCase.name, testMessage.data, unmarshalledMessage.data, string(marshalled))
+			}
+		}
+
+		// 2) Now use the test case marshalled string to confirm the different formats are correctly unmarshalled.
+		unmarshalledMessage = headerType.NewDynamicMessage()
+		if err := json.Unmarshal([]byte(testCase.marshalled), unmarshalledMessage); err != nil {
+			t.Fatalf("failed to unmarshal dynamic message\n json: %v\nerr: %v", testCase.marshalled, err)
+		}
+		for key := range testMessage.data {
+			original := testMessage.data[key]
+			unmarshalled := unmarshalledMessage.data[key]
+			if reflect.DeepEqual(original, unmarshalled) == false {
+				t.Fatalf("original and unmarshalled data mismatch for test case %s. \n Original: %v \n Unmarshalled: %v \n json: %v", testCase.name, testMessage.data, unmarshalledMessage.data, string(testCase.marshalled))
+			}
+		}
+	}
+}
+
 // Verify the NaN behavior of floats. This cannot be done using reflect deep-equal, so gets its own test case.
 func TestDynamicMessage_JSON_floatNan(t *testing.T) {
 

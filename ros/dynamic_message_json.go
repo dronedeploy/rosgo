@@ -696,12 +696,12 @@ func unmarshalSecNSecObject(marshalled []byte) (sec uint32, nsec uint32, err err
 	err = jsonparser.ObjectEach(marshalled, func(k []byte, v []byte, dataType jsonparser.ValueType, offset int) error {
 		var err error
 		switch string(k) {
-		case "sec":
+		case "sec", "secs", "Sec", "Secs":
 			tempSec, err = jsonparser.ParseInt(v)
 			if err == nil {
 				hasSec = true
 			}
-		case "nsec":
+		case "nsec", "nsecs", "NSec", "NSecs":
 			tempNSec, err = jsonparser.ParseInt(v)
 			if err == nil {
 				hasNSec = true
