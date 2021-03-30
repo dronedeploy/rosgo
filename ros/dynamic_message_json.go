@@ -328,7 +328,7 @@ func messagePointerError(m *DynamicMessage) error {
 		return errors.New("nil pointer to dynamicType")
 	}
 	if m.data == nil {
-		return errors.New("nil pointer to dynamicType")
+		return errors.New("nil pointer to DynamicMessage data")
 	}
 	if m.dynamicType.nested == nil {
 		return errors.New("nil pointer to dynamicType nested map")
