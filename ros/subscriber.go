@@ -245,6 +245,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				reader := bytes.NewReader(msgEvent.bytes)
 				if err := m.Deserialize(reader); err != nil {
 					logger.Error(sub.topic, " : ", err)
+					return
 				}
 				// TODO: Investigate this
 				args := []reflect.Value{reflect.ValueOf(m), reflect.ValueOf(msgEvent.event)}
