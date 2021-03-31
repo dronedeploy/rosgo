@@ -390,6 +390,44 @@ func TestSubscriber_Run_JobCallbacks(t *testing.T) {
 	}
 }
 
+func TestSubscriber_Run_JobCallbacks_BadDeserialization(t *testing.T) {
+	sub := makeTestSubscriber()
+	ctx := newFakeContext()
+	jobChan := make(chan func())
+	enableChan := make(chan bool)
+	rosAPI := newFakeSubscriberRos()
+	log := makeTestLogger()
+	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {}
+
+	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
+	defer sub.Shutdown()
+
+	// Send new callback functions to subscription.
+	cbCalled := false
+	cb := func(m Message, e MessageEvent) {
+		cbCalled = true
+	}
+	sub.addCallbackChan <- cb
+
+	// Bad payload specification (expect u8[8], but send u8[7])
+	bPayload := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	sub.msgChan <- messageEvent{
+		bytes: bPayload,
+		event: MessageEvent{"TestPublisher", time.Now(), make(map[string]string)},
+	}
+
+	select {
+	case job := <-jobChan:
+		job()
+	case <-time.After(time.Second):
+		t.Fatalf("expected to receive job")
+	}
+
+	if cbCalled == true {
+		t.Fatal("exected callback for invalid dynamic message")
+	}
+}
+
 func TestSubscriber_Run_JobPrioritization(t *testing.T) {
 	var msg Message
 	sub := makeTestSubscriberWithJobCallback(func(m Message, e MessageEvent) {
@@ -678,7 +716,7 @@ func makeTestSubscriberWithJobCallback(callback interface{}) *defaultSubscriber 
 func makeTestLogger() *modular.ModuleLogger {
 	logger := modular.NewRootLogger(logrus.New())
 	log := logger.GetModuleLogger()
-	log.SetLevel(logrus.DebugLevel)
+	log.SetLevel(logrus.ErrorLevel)
 	return &log
 }
 
