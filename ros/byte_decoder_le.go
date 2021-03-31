@@ -231,6 +231,10 @@ func (d LEByteDecoder) DecodeFloat64Array(buf *bytes.Reader, size int) ([]JsonFl
 
 // DecodeStringArray decodes an array of strings.
 func (d LEByteDecoder) DecodeStringArray(buf *bytes.Reader, size int) ([]string, error) {
+	// Use minimum string byte size = 4
+	if err := CheckSize(buf, size*4); err != nil {
+		return nil, errors.Wrap(err, "decoding string array")
+	}
 
 	// String format is: [size|string] where size is a u32.
 	slice := make([]string, size)
@@ -293,6 +297,11 @@ func (d LEByteDecoder) DecodeDurationArray(buf *bytes.Reader, size int) ([]Durat
 
 // DecodeMessageArray decodes an array of DynamicMessages.
 func (d LEByteDecoder) DecodeMessageArray(buf *bytes.Reader, size int, msgType *DynamicMessageType) ([]Message, error) {
+	// Not an exact check, but at least prevents an impossible allocation
+	if err := CheckSize(buf, size); err != nil {
+		return nil, errors.Wrap(err, "decoding message array")
+	}
+
 	slice := make([]Message, size)
 
 	for i := 0; i < size; i++ {

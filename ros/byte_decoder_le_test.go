@@ -150,6 +150,69 @@ func TestDecoder_BufferTooSmall(t *testing.T) {
 
 }
 
+func TestDecoder_DangerousSize(t *testing.T) {
+	raw := make([]byte, 20)
+	buffer := bytes.NewReader(raw)
+	d := LEByteDecoder{}
+
+	fields := []gengo.Field{
+		*gengo.NewField("Testing", "uint8", "v", false, 0),
+	}
+	testMessageType := &DynamicMessageType{
+		spec:         generateTestSpec(fields),
+		nested:       make(map[string]*DynamicMessageType),
+		jsonPrealloc: 0,
+	}
+
+	// These test cases are designed to cause the tester to throw if we preallocate without checking size.
+
+	if _, err := d.DecodeBoolArray(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeInt8Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeInt16Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeInt32Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeInt64Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeUint8Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeUint16Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeUint32Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeUint64Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeFloat32Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeFloat64Array(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeStringArray(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeTimeArray(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeDurationArray(buffer, 1e9); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+	if _, err := d.DecodeMessageArray(buffer, 1e9, testMessageType); err == nil {
+		t.Fatal("did not error for buffer too small")
+	}
+}
+
 func TestDecoder_BufferExactSize(t *testing.T) {
 	raw := []byte{0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	buffer := bytes.NewReader(raw)
