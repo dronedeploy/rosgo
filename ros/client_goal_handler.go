@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	modular "github.com/edwinhayes/logrus-modular"
+	"github.com/team-rocos/go-common/logging"
 )
 
 type clientGoalHandler struct {
@@ -14,7 +14,7 @@ type clientGoalHandler struct {
 	actionGoalID string
 	transitionCb interface{}
 	feedbackCb   interface{}
-	logger       *modular.ModuleLogger
+	logger       logging.Log
 }
 
 func newClientGoalHandler(ac *defaultActionClient, ag ActionGoal, transitionCb, feedbackCb interface{}) (*clientGoalHandler, error) {
@@ -75,13 +75,12 @@ func (gh *clientGoalHandler) GetGoalStatusText() (string, error) {
 }
 
 func (gh *clientGoalHandler) GetTerminalState() (uint8, error) {
-	logger := *gh.actionClient.logger
 	if gh.stateMachine == nil {
 		return 0, fmt.Errorf("trying to get goal status on inactive clientGoalHandler")
 	}
 
 	if gh.stateMachine.state != Done {
-		logger.Warnf("Asking for terminal state when we are in state %v", gh.stateMachine.state)
+		gh.actionClient.logger.Warn().Stringer("state", gh.stateMachine.state).Msg("Asking for terminal state when we are in state")
 	}
 
 	// implement get status
@@ -96,7 +95,7 @@ func (gh *clientGoalHandler) GetTerminalState() (uint8, error) {
 		return goalStatus, nil
 	}
 
-	logger.Warnf("Asking for terminal state when latest goal is in %v", goalStatus)
+	gh.actionClient.logger.Warn().Uint8("state", goalStatus).Msg("Asking for terminal state when latest goal is in state")
 	return uint8(9), nil
 }
 
@@ -204,7 +203,6 @@ func (gh *clientGoalHandler) updateResult(result ActionResult) error {
 }
 
 func (gh *clientGoalHandler) updateStatus(statusArr ActionStatusArray) error {
-	logger := *gh.logger
 	state := gh.stateMachine.getState()
 	if state == Done {
 		return nil
@@ -216,7 +214,7 @@ func (gh *clientGoalHandler) updateStatus(statusArr ActionStatusArray) error {
 			state != WaitingForResult &&
 			state != Done {
 
-			logger.Warnf("Transitioning goal with actionGoalID: %v to `Lost`", gh.actionGoalID)
+			gh.logger.Warn().Str("actionGoalID", gh.actionGoalID).Msg("Transitioning goal with actionGoalID to `Lost`")
 			gh.stateMachine.setAsLost()
 			gh.stateMachine.transitionTo(Done, gh, gh.transitionCb)
 		}

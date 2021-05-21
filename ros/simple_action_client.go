@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	modular "github.com/edwinhayes/logrus-modular"
+	"github.com/team-rocos/go-common/logging"
 )
 
 const (
@@ -22,7 +22,7 @@ type simpleActionClient struct {
 	activeCb    interface{}
 	feedbackCb  interface{}
 	doneChan    chan struct{}
-	logger      *modular.ModuleLogger
+	logger      logging.Log
 }
 
 func newSimpleActionClient(node Node, action string, actionType ActionType) (*simpleActionClient, error) {
@@ -54,15 +54,15 @@ func (sc *simpleActionClient) SendGoal(goal Message, doneCb, activeCb, feedbackC
 }
 
 func (sc *simpleActionClient) SendGoalAndWait(goal Message, executeTimeout, preeptTimeout Duration) (uint8, error) {
-	logger := *sc.logger
+	logger := sc.logger
 	sc.SendGoal(goal, nil, nil, nil, "")
 	if !sc.WaitForResult(executeTimeout) {
-		logger.Debug("Cancelling goal")
+		logger.Debug().Msg("Cancelling goal")
 		sc.CancelGoal()
 		if sc.WaitForResult(preeptTimeout) {
-			logger.Debug("Preempt finished within specified timeout")
+			logger.Debug().Msg("Preempt finished within specified timeout")
 		} else {
-			logger.Debug("Preempt did not finish within specified timeout")
+			logger.Debug().Msg("Preempt did not finish within specified timeout")
 		}
 	}
 
@@ -78,9 +78,9 @@ func (sc *simpleActionClient) WaitForServer(timeout Duration) bool {
 }
 
 func (sc *simpleActionClient) WaitForResult(timeout Duration) bool {
-	logger := *sc.logger
+	logger := sc.logger
 	if sc.gh == nil {
-		logger.Errorf("[SimpleActionClient] Called WaitForResult when no goal exists")
+		logger.Error().Msg("[SimpleActionClient] Called WaitForResult when no goal exists")
 		return false
 	}
 
@@ -159,13 +159,13 @@ func (sc *simpleActionClient) StopTrackingGoal() {
 }
 
 func (sc *simpleActionClient) transitionHandler(gh ClientGoalHandler) {
-	logger := *sc.logger
+	logger := sc.logger
 	commState, err := gh.GetCommState()
 	if err != nil {
-		logger.Errorf("Error getting CommState: %v", err)
+		logger.Error().Err(err).Msg("Error getting CommState")
 		return
 	}
-	logger.Debugf("transitionHandler received comm state %s when in simple state %s with SimpleActionClient in NS %s", commState, sc.simpleState, sc.ac.node.Name())
+	logger.Debug().Uint8("comm-state", uint8(commState)).Uint8("simple-state", sc.simpleState).Str("node-name", sc.ac.node.Name()).Msg("transitionHandler received comm state when in simple state with SimpleActionClient in NS")
 	errMsg := fmt.Errorf("received comm state %s when in simple state %d with SimpleActionClient in NS %s",
 		commState, sc.simpleState, sc.ac.node.Name())
 
@@ -179,13 +179,13 @@ func (sc *simpleActionClient) transitionHandler(gh ClientGoalHandler) {
 			callbackType = "active"
 
 		case SimpleStateDone:
-			logger.Errorf("[SimpleActionClient] %v", errMsg)
+			logger.Error().Err(errMsg).Msg("[SimpleActionClient]")
 		}
 
 	case Recalling:
 		switch sc.simpleState {
 		case SimpleStateActive, SimpleStateDone:
-			logger.Errorf("[SimpleActionClient] %v", errMsg)
+			logger.Error().Err(errMsg).Msg("[SimpleActionClient]")
 		}
 
 	case Preempting:
@@ -195,7 +195,7 @@ func (sc *simpleActionClient) transitionHandler(gh ClientGoalHandler) {
 			callbackType = "active"
 
 		case SimpleStateDone:
-			logger.Errorf("[SimpleActionClient] %v", errMsg)
+			logger.Error().Err(errMsg).Msg("[SimpleActionClient]")
 		}
 
 	case Done:
@@ -210,12 +210,12 @@ func (sc *simpleActionClient) transitionHandler(gh ClientGoalHandler) {
 
 			status, err := gh.GetGoalStatus()
 			if err != nil {
-				logger.Errorf("[SimpleActionClient] Error getting status: %v", err)
+				logger.Error().Err(err).Msg("[SimpleActionClient] Error getting status")
 				break
 			}
 			result, err := gh.GetResult()
 			if err != nil {
-				logger.Errorf("[SimpleActionClient] Error getting result: %v; GoalStatus: %v", err, status)
+				logger.Error().Uint8("result", status).Err(err).Msg("[SimpleActionClient] Error getting result")
 				break
 			}
 
@@ -224,7 +224,7 @@ func (sc *simpleActionClient) transitionHandler(gh ClientGoalHandler) {
 			args = append(args, reflect.ValueOf(result))
 
 		case SimpleStateDone:
-			logger.Errorf("[SimpleActionClient] received DONE twice")
+			logger.Error().Msg("[SimpleActionClient] received DONE twice")
 		}
 	}
 
@@ -234,11 +234,11 @@ func (sc *simpleActionClient) transitionHandler(gh ClientGoalHandler) {
 }
 
 func (sc *simpleActionClient) sendDone() {
-	logger := *sc.logger
+	logger := sc.logger
 	select {
 	case sc.doneChan <- struct{}{}:
 	default:
-		logger.Errorf("[SimpleActionClient] Error sending done notification. Channel full.")
+		logger.Error().Msg("[SimpleActionClient] Error sending done notification. Channel full.")
 	}
 }
 
@@ -251,14 +251,14 @@ func (sc *simpleActionClient) feedbackHandler(gh ClientGoalHandler, msg Message)
 }
 
 func (sc *simpleActionClient) setSimpleState(state uint8) {
-	logger := *sc.logger
-	logger.Debugf("[SimpleActionClient] Transitioning from %d to %d", sc.simpleState, state)
+	logger := sc.logger
+	logger.Debug().Uint8("from", sc.simpleState).Uint8("to", state).Msg("[SimpleActionClient] Transitioning")
 	sc.simpleState = state
 }
 
 func (sc *simpleActionClient) runCallback(cbType string, args []reflect.Value) {
 	var callback interface{}
-	logger := *sc.logger
+	logger := sc.logger
 	switch cbType {
 	case "active":
 		callback = sc.activeCb
@@ -267,7 +267,7 @@ func (sc *simpleActionClient) runCallback(cbType string, args []reflect.Value) {
 	case "done":
 		callback = sc.doneCb
 	default:
-		logger.Errorf("[SimpleActionClient] Unknown callback %s", cbType)
+		logger.Error().Str("cb-type", cbType).Msg("[SimpleActionClient] Unknown callback")
 	}
 
 	if callback == nil {
@@ -278,12 +278,11 @@ func (sc *simpleActionClient) runCallback(cbType string, args []reflect.Value) {
 	numArgsNeeded := fun.Type().NumIn()
 
 	if numArgsNeeded > len(args) {
-		logger.Errorf("[SimpleActionClient] Unexpected arguments:"+
-			"callback %s expects %d arguments but %d arguments provided", cbType, numArgsNeeded, len(args))
+		logger.Error().Str("cb-type", cbType).Int("args-needed", numArgsNeeded).Int("arg-count", len(args)).Msg("[SimpleActionClient] Unexpected arguments for callback")
 		return
 	}
 
-	logger.Debugf("[SimpleActionClient] Calling %s callback with %d arguments", cbType, len(args))
+	logger.Debug().Str("cb-type", cbType).Int("arg-count", len(args)).Msg("[SimpleActionClient] Calling callback with arguments")
 
 	fun.Call(args[0:numArgsNeeded])
 }

@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"sync"
 
-	modular "github.com/edwinhayes/logrus-modular"
 	"github.com/pkg/errors"
+	"github.com/team-rocos/go-common/logging"
 )
 
 type messageEvent struct {
@@ -83,7 +83,7 @@ type requestTopicResult struct {
 }
 
 // startPublisherSubscription defines a function interface for starting a subscription.
-type startPublisherSubscription func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger)
+type startPublisherSubscription func(ctx goContext.Context, pubURI string, log logging.Log)
 
 // The subscriber object runs in own goroutine (start).
 type defaultSubscriber struct {
@@ -113,16 +113,16 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	return sub
 }
 
-func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log *modular.ModuleLogger) {
+func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log logging.Log) {
 	ctx, cancel := goContext.WithCancel(goContext.Background())
 	defer cancel()
-	logger := *log
-	logger.Debugf("Subscriber goroutine for %s started.", sub.topic)
+
+	log.Debug().Str("topic", sub.topic).Msg("Subscriber goroutine for topic started.")
 
 	wg.Add(1)
 	defer wg.Done()
 	defer func() {
-		logger.Debug(sub.topic, " : defaultSubscriber.start exit")
+		log.Debug().Str("topic", sub.topic).Msg("defaultSubscriber.start exit")
 	}()
 
 	// Construct the SubscriberRosApi.
@@ -134,7 +134,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 	}
 
 	// Decouples the implementation details of starting a subscription from the run loop.
-	startSubscription := func(ctx goContext.Context, pubURI string, log *modular.ModuleLogger) {
+	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {
 		startRemotePublisherConn(ctx, &TCPRosNetDialer{}, pubURI, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan, log)
 	}
 
@@ -142,8 +142,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 	sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 }
 
-func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, startSubscription startPublisherSubscription, log *modular.ModuleLogger) {
-	logger := *log
+func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, startSubscription startPublisherSubscription, log logging.Log) {
 	enabled := true
 	cancelMap := make(map[string]goContext.CancelFunc)
 	uri2pubMap := make(map[string]string)
@@ -161,7 +160,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			if requestTopicCancel != nil {
 				requestTopicCancel()
 			}
-			logger.Debug(sub.topic, " : Receive pubListChan")
+			log.Debug().Str("topic", sub.topic).Msg("Receive pubListChan")
 			deadPubs := setDifference(sub.pubList, list)
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = setDifference(sub.pubList, deadPubs)
@@ -203,7 +202,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			uri := requestTopicData.uri
 
 			if err := requestTopicData.err; err != nil {
-				logger.Error("uri request failed, topic : ", sub.topic, ", error : ", err)
+				log.Error().Str("topic", sub.topic).Err(err).Msg("uri request failed for topic with error")
 				continue
 			}
 
@@ -215,7 +214,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			startSubscription(subCtx, uri, log)
 
 		case uri := <-sub.disconnectedChan:
-			logger.Debugf("Connection to %s was disconnected.", uri)
+			log.Debug().Str("uri", uri).Msg("Connection to uri was disconnected.")
 			if pub, ok := uri2pubMap[uri]; ok {
 				if cancel, ok := cancelMap[pub]; ok {
 					cancel()
@@ -226,7 +225,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			}
 
 		case callback := <-sub.addCallbackChan:
-			logger.Debug(sub.topic, " : Receive addCallbackChan")
+			log.Debug().Str("topic", sub.topic).Msg("Receive addCallbackChan")
 			sub.callbacks = append(sub.callbacks, callback)
 
 		case msgEvent := <-sub.msgChan:
@@ -234,7 +233,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				continue
 			}
 			// Pop received message then bind callbacks and enqueue to the job channel.
-			logger.Debug(sub.topic, " : Receive msgChan")
+			log.Debug().Str("topic", sub.topic).Msg("Receive msgChan")
 
 			callbacks := make([]interface{}, len(sub.callbacks))
 			copy(callbacks, sub.callbacks)
@@ -244,7 +243,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				m := sub.msgType.NewMessage()
 				reader := bytes.NewReader(msgEvent.bytes)
 				if err := m.Deserialize(reader); err != nil {
-					logger.Error(sub.topic, " : ", err)
+					log.Error().Str("topic", sub.topic).Err(err).Msg("")
 					return
 				}
 				// TODO: Investigate this
@@ -260,16 +259,16 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			activeJobChan = jobChan
 
 		case activeJobChan <- latestJob:
-			logger.Debug(sub.topic, " : Callback job enqueued.")
+			log.Debug().Str("topic", sub.topic).Msg("Callback job enqueued.")
 			activeJobChan = nil
 			latestJob = func() {}
 
 		case <-sub.shutdownChan:
 			// Shutdown subscription goroutine; keeps shutdowns snappy.
 			go func() {
-				logger.Debug(sub.topic, " : receive shutdownChan")
+				log.Debug().Str("topic", sub.topic).Msg("receive shutdownChan")
 				if err := rosAPI.Unregister(); err != nil {
-					logger.Warn(sub.topic, " : unregister error: ", err)
+					log.Warn().Str("topic", sub.topic).Err(err).Msg("unregister error")
 				}
 			}()
 			sub.shutdownChan <- struct{}{}
@@ -288,7 +287,7 @@ func startRemotePublisherConn(ctx goContext.Context, dialer TCPRosDialer,
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	msgChan chan messageEvent,
 	disconnectedChan chan string,
-	log *modular.ModuleLogger) {
+	log logging.Log) {
 	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
 	sub.dialer = dialer
 	sub.startWithContext(ctx, log)

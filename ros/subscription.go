@@ -7,8 +7,7 @@ import (
 	"net"
 	"time"
 
-	modular "github.com/edwinhayes/logrus-modular"
-	"github.com/sirupsen/logrus"
+	"github.com/team-rocos/go-common/logging"
 )
 
 // defaultSubscription connects to a publisher and runs a go routine to maintain its connection and packetize messages from the tcp stream. Messages are passed through the messageChan channel.
@@ -53,23 +52,23 @@ const (
 )
 
 // start spawns a go routine which connects a subscription to a publisher.
-func (s *defaultSubscription) start(log *modular.ModuleLogger) {
+func (s *defaultSubscription) start(log logging.Log) {
 	go s.run(goContext.Background(), log) // TODO Remove this function, rename the other to start
 }
 
 // start spawns a go routine which connects a subscription to a publisher.
-func (s *defaultSubscription) startWithContext(ctx goContext.Context, log *modular.ModuleLogger) {
+func (s *defaultSubscription) startWithContext(ctx goContext.Context, log logging.Log) {
 	go s.run(ctx, log)
 }
 
 // run connects to a publisher and attempts to maintain a connection until either a stop is requested or the publisher disconnects.
-func (s *defaultSubscription) run(ctx goContext.Context, log *modular.ModuleLogger) {
+func (s *defaultSubscription) run(ctx goContext.Context, log logging.Log) {
 
-	logger := *log
-	logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("defaultSubscription.run() has started")
+	logger := log
+	logger.Debug().Str("topic", s.topic).Msg("defaultSubscription.run() has started")
 
 	defer func() {
-		logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("defaultSubscription.run() has exited")
+		logger.Debug().Str("topic", s.topic).Msg("defaultSubscription.run() has exited")
 	}()
 
 	var conn net.Conn
@@ -81,7 +80,7 @@ func (s *defaultSubscription) run(ctx goContext.Context, log *modular.ModuleLogg
 			if conn != nil {
 				conn.Close()
 			}
-			logger.WithFields(logrus.Fields{"topic": s.topic}).Info("could not connect to publisher, closing connection")
+			logger.Info().Str("topic", s.topic).Msg("could not connect to publisher, closing connection")
 			return
 		}
 
@@ -94,30 +93,30 @@ func (s *defaultSubscription) run(ctx goContext.Context, log *modular.ModuleLogg
 
 		switch result {
 		case readResultResync: // TCP out of sync; we will attempt to resync by closing the connection and trying again.
-			logger.WithFields(logrus.Fields{"topic": s.topic}).Debug("connection closed - attempting to reconnect with publisher")
+			logger.Debug().Str("topic", s.topic).Msg("connection closed - attempting to reconnect with publisher")
 			continue
 		case readResultCancel: // Cancelled - easy, just return!
 			return
 		case readResultDisconnected: // Publisher disconnected - not much we can do here, the subscription has ended.
-			logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI}).Info("connection closed - publisher has disconnected")
+			logger.Info().Str("topic", s.topic).Str("pubURI", s.pubURI).Msg("connection closed - publisher has disconnected")
 			s.remoteDisconnectedChan <- s.pubURI
 			return
 		case readResultError: // Read failure; the reason is uncertain, maybe the bus is polluted? We give up.
-			logger.WithFields(logrus.Fields{"topic": s.topic}).Error("connection closed - failed to read a message correctly")
+			logger.Error().Str("topic", s.topic).Msg("connection closed - failed to read a message correctly")
 			s.remoteDisconnectedChan <- s.pubURI
 			return
 		default: // Unknown failure - this is a bug, log the connectionFailureMode to help determine cause.
-			logger.WithFields(logrus.Fields{"topic": s.topic, "readResult": result}).Error("connection closed - unknown failure mode")
+			logger.Error().Str("topic", s.topic).Int("readResult", int(result)).Msg("connection closed - unknown failure mode")
 			return
 		}
 	}
 }
 
 // connectToPublisher estabilishes a TCPROS connection with a publishing node by exchanging headers to ensure both nodes are using the same message type.
-func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *net.Conn, log *modular.ModuleLogger) bool {
+func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *net.Conn, log logging.Log) bool {
 	var err error
 
-	logger := *log
+	logger := log
 
 	var subscriberHeaders []header
 	subscriberHeaders = append(subscriberHeaders, header{"topic", s.topic})
@@ -130,13 +129,13 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 
 	// 1. Connnect to tcp.
 	if *conn, err = s.dialer.Dial(ctx, s.pubURI); err != nil {
-		logger.WithFields(logrus.Fields{"topic": s.topic, "pubURI": s.pubURI, "err": err}).Debug("failed to dial publisher")
+		logger.Debug().Str("topic", s.topic).Str("pubURI", s.pubURI).Err(err).Msg("failed to dial publisher")
 		return false
 	}
 
 	// 2. Write connection header to the publisher.
 	if err = s.writeHeader(ctx, conn, log, subscriberHeaders); err != nil {
-		logger.WithFields(logrus.Fields{"topic": s.topic, "error": err}).Error("failed to write connection header")
+		logger.Error().Str("topic", s.topic).Err(err).Msg("failed to write connection header")
 		return false
 	}
 
@@ -150,7 +149,7 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 	// 3. Read the publisher's reponse header.
 	var resHeaderMap map[string]string
 	if resHeaderMap, err = s.readHeader(ctx, conn, log); err != nil {
-		logger.WithFields(logrus.Fields{"topic": s.topic, "error": err}).Error("failed to write connection header")
+		logger.Error().Str("topic", s.topic).Err(err).Msg("failed to write connection header")
 		return false
 	}
 
@@ -163,14 +162,7 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 
 	// 4. Verify the publisher's response header.
 	if resHeaderMap["type"] != s.msgType.Name() || resHeaderMap["md5sum"] != s.msgType.MD5Sum() {
-		logFields := make(logrus.Fields)
-		for key, value := range resHeaderMap {
-			logFields["pub["+key+"]"] = value
-		}
-		for _, h := range subscriberHeaders {
-			logFields["sub["+h.key+"]"] = h.value
-		}
-		logger.WithFields(logFields).Error("publisher provided incompatable message header")
+		logger.Error().Interface("pubs", resHeaderMap).Interface("subs", subscriberHeaders).Msg("publisher provided incompatable message header")
 		return false
 	}
 
@@ -187,13 +179,9 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 	return true
 }
 
-func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn, log *modular.ModuleLogger, subscriberHeaders []header) (err error) {
-	logger := *log
-	logFields := make(logrus.Fields)
-	for _, h := range subscriberHeaders {
-		logFields[h.key] = h.value
-	}
-	logger.WithFields(logFields).Debug("writing TCPROS connection header")
+func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn, log logging.Log, subscriberHeaders []header) (err error) {
+	logger := log
+	logger.Debug().Interface("sub-headers", subscriberHeaders).Msg("writing TCPROS connection header")
 
 	headerWriter := bytes.NewBuffer(make([]byte, 0))
 	err = writeConnectionHeader(subscriberHeaders, headerWriter)
@@ -216,8 +204,8 @@ func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn,
 	}
 }
 
-func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, log *modular.ModuleLogger) (resHeaderMap map[string]string, err error) {
-	logger := *log
+func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, log logging.Log) (resHeaderMap map[string]string, err error) {
+	logger := log
 
 	// Read a TCPROS message.
 	ctx, cancel := goContext.WithCancel(ctx)
@@ -242,23 +230,21 @@ func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, 
 	var resHeaders []header
 	resHeaders, err = readConnectionHeaderPayload(headerReader, headerSize)
 	if err != nil {
-		logger.WithFields(logrus.Fields{"topic": s.topic, "error": err}).Error("failed to read response header")
+		logger.Error().Str("topic", s.topic).Err(err).Msg("failed to read response header")
 		return nil, err
 	}
 
-	logFields := logrus.Fields{"topic": s.topic}
 	resHeaderMap = make(map[string]string)
 	for _, h := range resHeaders {
 		resHeaderMap[h.key] = h.value
-		logFields["pub["+h.key+"]"] = h.value
 	}
-	logger.WithFields(logFields).Debug("received TCPROS response header")
+	logger.Debug().Str("topic", s.topic).Interface("resp-headers", resHeaders).Msg("received TCPROS response header")
 	return resHeaderMap, err
 }
 
 // readFromPublisher maintains a connection with a publisher. When a connection is stable, it will loop until either the publisher or subscriber disconnects.
-func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log *modular.ModuleLogger) readResult {
-	logger := *log
+func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log logging.Log) readResult {
+	logger := log
 
 	// TCPROS reader setup.
 	ctx, cancel := goContext.WithCancel(ctx)
@@ -295,7 +281,7 @@ func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.
 			switch rResult {
 			case readResultOk:
 				if activeMsgChan != nil {
-					logger.WithFields(logrus.Fields{"topic": s.topic}).Trace("stale message dropped")
+					logger.Trace().Str("topic", s.topic).Msg("stale message dropped")
 				}
 				s.event.ReceiptTime = time.Now()
 				latestMessage = messageEvent{bytes: tcpResult.Buf, event: s.event}

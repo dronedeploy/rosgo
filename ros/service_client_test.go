@@ -7,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	modular "github.com/edwinhayes/logrus-modular"
-	"github.com/sirupsen/logrus"
+	"github.com/team-rocos/go-common/logging"
 )
 
 // Fake Service types for testing.
@@ -400,10 +399,7 @@ func doSendResponse(t *testing.T, conn net.Conn) {
 
 // setupServiceServer establishes all init values
 func setupServiceServerAndClient(t *testing.T) (net.Listener, net.Conn, *defaultServiceClient, chan error) {
-	rootLogger := modular.NewRootLogger(logrus.New())
-
-	logger := rootLogger.GetModuleLogger()
-	logger.SetLevel(logrus.WarnLevel)
+	logger := logging.Root().With().Logger().Level(logging.WarnLevel)
 
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -413,7 +409,7 @@ func setupServiceServerAndClient(t *testing.T) (net.Listener, net.Conn, *default
 	serviceURI := l.Addr().String()
 
 	client := &defaultServiceClient{
-		logger:    &logger,
+		logger:    logger,
 		service:   "/test/service",
 		srvType:   testServiceType{},
 		masterURI: "",

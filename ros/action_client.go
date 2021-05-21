@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	modular "github.com/edwinhayes/logrus-modular"
 	"github.com/pkg/errors"
+	"github.com/team-rocos/go-common/logging"
 )
 
 type defaultActionClient struct {
@@ -22,7 +22,7 @@ type defaultActionClient struct {
 	resultSub        Subscriber
 	feedbackSub      Subscriber
 	statusSub        Subscriber
-	logger           *modular.ModuleLogger
+	logger           logging.Log
 	handlers         []*clientGoalHandler
 	handlersMutex    sync.RWMutex
 	goalIDGen        *goalIDGenerator
@@ -74,9 +74,8 @@ func newDefaultActionClient(node Node, action string, actType ActionType) (*defa
 }
 
 func (ac *defaultActionClient) SendGoal(goal Message, transitionCb, feedbackCb interface{}, goalID string) (ClientGoalHandler, error) {
-	logger := *ac.logger
 	if !ac.started {
-		logger.Error("[ActionClient] Trying to send a goal on an inactive ActionClient")
+		ac.logger.Error().Msg("[ActionClient] Trying to send a goal on an inactive ActionClient")
 	}
 
 	// Create a new action goal message
@@ -104,7 +103,7 @@ func (ac *defaultActionClient) SendGoal(goal Message, transitionCb, feedbackCb i
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to publish action goal")
 	}
-	logger.Debugf("action goal with id: %s published successfully", goalID)
+	ac.logger.Debug().Str("id", goalID).Msg("action goal with id published successfully")
 	// create an internal handler to track this goal
 	handler, err := newClientGoalHandler(ac, ag, transitionCb, feedbackCb)
 	if err != nil {
@@ -119,9 +118,8 @@ func (ac *defaultActionClient) SendGoal(goal Message, transitionCb, feedbackCb i
 }
 
 func (ac *defaultActionClient) CancelAllGoals() {
-	logger := *ac.logger
 	if !ac.started {
-		logger.Error("[ActionClient] Trying to cancel goals on an inactive ActionClient")
+		ac.logger.Error().Msg("[ActionClient] Trying to cancel goals on an inactive ActionClient")
 		return
 	}
 
@@ -131,10 +129,9 @@ func (ac *defaultActionClient) CancelAllGoals() {
 }
 
 func (ac *defaultActionClient) CancelAllGoalsBeforeTime(stamp Time) {
-	logger := *ac.logger
 	// Create a goal id message
 	if !ac.started {
-		logger.Error("[ActionClient] Trying to cancel goals on an inactive ActionClient")
+		ac.logger.Error().Msg("[ActionClient] Trying to cancel goals on an inactive ActionClient")
 		return
 	}
 	// Create a goal id message using timestamp
@@ -204,9 +201,8 @@ func (ac *defaultActionClient) PublishCancel(cancel *DynamicMessage) {
 }
 
 func (ac *defaultActionClient) WaitForServer(timeout Duration) bool {
-	logger := *ac.logger
 	started := false
-	logger.Info("[ActionClient] Waiting action server to start")
+	ac.logger.Info().Msg("[ActionClient] Waiting action server to start")
 	rate := CycleTime(NewDuration(0, 10000000))
 	waitStart := Now()
 
@@ -250,7 +246,6 @@ func (ac *defaultActionClient) DeleteGoalHandler(gh *clientGoalHandler) {
 
 // Internal Result Callback for Result subscriber
 func (ac *defaultActionClient) internalResultCallback(result interface{}, event MessageEvent) {
-	logger := *ac.logger
 	ac.handlersMutex.RLock()
 	defer ac.handlersMutex.RUnlock()
 
@@ -259,7 +254,7 @@ func (ac *defaultActionClient) internalResultCallback(result interface{}, event 
 
 	for _, h := range ac.handlers {
 		if err := h.updateResult(results); err != nil {
-			logger.Error(err)
+			ac.logger.Error().Err(err).Msg("")
 		}
 	}
 }
@@ -279,15 +274,14 @@ func (ac *defaultActionClient) internalFeedbackCallback(feedback interface{}, ev
 
 // Internal Status Callback for status subscriber
 func (ac *defaultActionClient) internalStatusCallback(statusArr interface{}, event MessageEvent) {
-	logger := *ac.logger
 	ac.handlersMutex.RLock()
 	defer ac.handlersMutex.RUnlock()
 
 	if !ac.statusReceived {
 		ac.statusReceived = true
-		logger.Debug("Recieved first status message from action server ")
+		ac.logger.Debug().Msg("Recieved first status message from action server ")
 	} else if ac.callerID != event.PublisherName {
-		logger.Debug("Previously received status from %s, now from %s. Did the action server change", ac.callerID, event.PublisherName)
+		ac.logger.Debug().Str("callerID", ac.callerID).Str("pub", event.PublisherName).Msg("Previously received status from callerID, now from pub. Did the action server change")
 	}
 
 	// Interface to status array conversion
@@ -295,7 +289,7 @@ func (ac *defaultActionClient) internalStatusCallback(statusArr interface{}, eve
 	ac.callerID = event.PublisherName
 	for _, h := range ac.handlers {
 		if err := h.updateStatus(statusArray); err != nil {
-			logger.Error(err)
+			ac.logger.Error().Err(err).Msg("")
 		}
 	}
 }
