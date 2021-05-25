@@ -73,7 +73,7 @@ func (s *simpleActionServer) AcceptNewGoal() (Message, error) {
 			"This goal was canceled because another goal was received by the simple action server")
 	}
 
-	logger.Debug().Msg("Accepting a new goal")
+	logger.Debug().Msg("accepting a new goal")
 
 	// accept the next goal
 	s.currentGoal = s.nextGoal
@@ -194,7 +194,7 @@ func (s *simpleActionServer) internalGoalCallback(ag ActionGoal) {
 		logger.Error().Err(err).Msg("error getting ActionGoal goal id")
 		return
 	}
-	logger.Debug().Str("id", ghID.GetID()).Msg("[SimpleActionServer] Server received new goal with id")
+	logger.Debug().Str("id", ghID.GetID()).Msg("[SimpleActionServer] server received new goal with id")
 
 	var goalStamp, nextGoalStamp Time
 	goalStamp = ghID.GetStamp()
@@ -252,7 +252,7 @@ func (s *simpleActionServer) internalGoalCallback(ag ActionGoal) {
 		select {
 		case s.executorCh <- struct{}{}:
 		default:
-			logger.Error().Msg("[SimpleActionServer] Executor new goal notification error: Channel full.")
+			logger.Error().Msg("[SimpleActionServer] executor new goal notification error: channel full")
 		}
 	} else {
 		goalHandler.SetCancelled(s.GetDefaultResult(),
@@ -270,7 +270,7 @@ func (s *simpleActionServer) internalPreemptCallback(gID ActionGoalID) {
 	if err != nil {
 		logger.Error().Err(err).Msg("error getting goal id")
 	}
-	logger.Info().Str("id", ghID.GetID()).Msg("[SimpleActionServer] Server received preempt call for goal with id")
+	logger.Info().Str("id", ghID.GetID()).Msg("[SimpleActionServer] server received preempt call for goal with id")
 
 	currentID, err := s.currentGoal.GetGoalId()
 	if err != nil {
@@ -336,7 +336,7 @@ func (s *simpleActionServer) execute() error {
 		}
 
 		if s.IsActive() {
-			logger.Warn().Msg("Your executeCallback did not set the goal to a terminal status. This is a bug in your ActionServer implementation. Fix your code! For now, the ActionServer will set this goal to aborted")
+			logger.Warn().Msg("your executeCallback did not set the goal to a terminal status. this is a bug in your ActionServer implementation. fix your code! for now, the ActionServer will set this goal to aborted")
 			if err := s.SetAborted(nil, ""); err != nil {
 				return err
 			}

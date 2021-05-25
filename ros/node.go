@@ -221,7 +221,7 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 		signal.Notify(node.interruptChan, os.Interrupt)
 		go func() {
 			<-node.interruptChan
-			log.Info().Msg("Interrupted")
+			log.Info().Msg("interrupted")
 			node.okMutex.Lock()
 			node.ok = false
 			node.okMutex.Unlock()
@@ -273,7 +273,7 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 	}
 	node.xmlrpcHandler = xmlrpc.NewHandler(m)
 	go http.Serve(node.xmlrpcListener, node.xmlrpcHandler)
-	log.Debug().Str("name", node.qualifiedName).Msg("Started")
+	log.Debug().Str("name", node.qualifiedName).Msg("started")
 	return node, nil
 }
 
@@ -361,11 +361,11 @@ func (node *defaultNode) paramUpdate(callerID string, key string, value interfac
 }
 
 func (node *defaultNode) publisherUpdate(callerID string, topic string, publishers []interface{}) (interface{}, error) {
-	node.log.Debug().Msg("Slave API publisherUpdate() called.")
+	node.log.Debug().Msg("slave API publisherUpdate() called")
 	var code int32
 	var message string
 	if sub, ok := node.subscribers[topic]; !ok {
-		node.log.Debug().Msg("publisherUpdate() called without subscribing topic.")
+		node.log.Debug().Msg("publisherUpdate() called without subscribing topic")
 		code = APIStatusFailure
 		message = "No such topic"
 	} else {
@@ -381,13 +381,13 @@ func (node *defaultNode) publisherUpdate(callerID string, topic string, publishe
 }
 
 func (node *defaultNode) requestTopic(callerID string, topic string, protocols []interface{}) (interface{}, error) {
-	node.log.Debug().Str("callerID", callerID).Str("topic", topic).Msg("Slave API requestTopic called")
+	node.log.Debug().Str("callerID", callerID).Str("topic", topic).Msg("slave API requestTopic called")
 	node.publishersMutex.RLock()
 	defer node.publishersMutex.RUnlock()
 
 	pub, ok := node.publishers[topic]
 	if !ok {
-		node.log.Debug().Msg("requestTopic() called with not publishing topic.")
+		node.log.Debug().Msg("requestTopic() called with not publishing topic")
 		return buildRosAPIResult(APIStatusFailure, "No such topic", nil), nil
 	}
 
@@ -434,7 +434,7 @@ func (node *defaultNode) NewPublisherWithCallbacks(topic string, msgType Message
 			name, msgType.Name(),
 			node.xmlrpcURI)
 		if err != nil {
-			node.log.Error().Err(err).Msg("Failed to call registerPublisher()")
+			node.log.Error().Err(err).Msg("failed to call registerPublisher()")
 			return nil, err
 		}
 
@@ -447,11 +447,11 @@ func (node *defaultNode) NewPublisherWithCallbacks(topic string, msgType Message
 
 // Master API for getSystemState
 func (node *defaultNode) GetSystemState() ([]interface{}, error) {
-	node.log.Trace().Msg("Call Master API getSystemState")
+	node.log.Trace().Msg("call Master API getSystemState")
 	result, err := callRosAPI(node.masterURI, "getSystemState",
 		node.qualifiedName)
 	if err != nil {
-		node.log.Error().Err(err).Msg("Failed to call getSystemState()")
+		node.log.Error().Err(err).Msg("failed to call getSystemState()")
 		return nil, err
 	}
 	list, ok := result.([]interface{})
@@ -467,7 +467,7 @@ func (node *defaultNode) GetServiceList() ([]string, error) {
 	// Get the system state
 	sysState, err := node.GetSystemState()
 	if err != nil {
-		node.log.Error().Err(err).Msg("Failed to call getSystemState()")
+		node.log.Error().Err(err).Msg("failed to call getSystemState()")
 		return nil, err
 	}
 	serviceList := make([]string, 0)
@@ -544,12 +544,12 @@ func (node *defaultNode) GetServiceType(serviceName string) (*ServiceHeader, err
 
 // Master API call for getPublishedTopics
 func (node *defaultNode) GetPublishedTopics(subgraph string) (map[string]string, error) {
-	node.log.Trace().Msg("Call Master API getPublishedTopics")
+	node.log.Trace().Msg("call Master API getPublishedTopics")
 	result, err := callRosAPI(node.masterURI, "getPublishedTopics",
 		node.qualifiedName,
 		subgraph)
 	if err != nil {
-		node.log.Error().Err(err).Msg("Failed to call getPublishedTopics()")
+		node.log.Error().Err(err).Msg("failed to call getPublishedTopics()")
 		return nil, err
 	}
 	list, ok := result.([]interface{})
@@ -590,11 +590,11 @@ func (node *defaultNode) GetPublishedActions(subgraph string) (map[string]string
 
 // Master API call for getTopicTypes
 func (node *defaultNode) GetTopicTypes() []interface{} {
-	node.log.Trace().Msg("Call Master API getTopicTypes")
+	node.log.Trace().Msg("call Master API getTopicTypes")
 	result, err := callRosAPI(node.masterURI, "getTopicTypes",
 		node.qualifiedName)
 	if err != nil {
-		node.log.Error().Err(err).Msg("Failed to call getTopicTypes()")
+		node.log.Error().Err(err).Msg("failed to call getTopicTypes()")
 	}
 	list, ok := result.([]interface{})
 	if !ok {
@@ -625,14 +625,14 @@ func (node *defaultNode) NewSubscriberWithFlowControl(topic string, msgType Mess
 	name := node.nameResolver.remap(topic)
 	sub, ok := node.subscribers[name]
 	if !ok {
-		node.log.Debug().Msg("Call Master API registerSubscriber")
+		node.log.Debug().Msg("call Master API registerSubscriber")
 		result, err := callRosAPI(node.masterURI, "registerSubscriber",
 			node.qualifiedName,
 			name,
 			msgType.Name(),
 			node.xmlrpcURI)
 		if err != nil {
-			node.log.Error().Err(err).Msg("Failed to call registerSubscriber()")
+			node.log.Error().Err(err).Msg("failed to call registerSubscriber()")
 			return nil, err
 		}
 		list, ok := result.([]interface{})
@@ -643,7 +643,7 @@ func (node *defaultNode) NewSubscriberWithFlowControl(topic string, msgType Mess
 		for _, item := range list {
 			s, ok := item.(string)
 			if !ok {
-				node.log.Error().Msg("Publisher list contains no string object")
+				node.log.Error().Msg("publisher list contains no string object")
 			}
 			publishers = append(publishers, s)
 		}
@@ -653,11 +653,11 @@ func (node *defaultNode) NewSubscriberWithFlowControl(topic string, msgType Mess
 		sub = newDefaultSubscriber(name, msgType, callback)
 		node.subscribers[name] = sub
 
-		node.log.Debug().Str("topic", sub.topic).Msg("Start subscriber goroutine for topic")
+		node.log.Debug().Str("topic", sub.topic).Msg("start subscriber goroutine for topic")
 		go sub.start(&node.waitGroup, node.qualifiedName, node.xmlrpcURI, node.masterURI, node.jobChan, enableChan, node.log)
-		node.log.Debug().Msg("Done")
+		node.log.Debug().Msg("done")
 		sub.pubListChan <- publishers
-		node.log.Debug().Str("topic", sub.topic).Msg("Update publisher list for topic")
+		node.log.Debug().Str("topic", sub.topic).Msg("update publisher list for topic")
 	} else {
 		sub.callbacks = append(sub.callbacks, callback)
 	}
@@ -706,7 +706,7 @@ func (node *defaultNode) Spin() {
 		timeoutChan := time.After(1000 * time.Millisecond)
 		select {
 		case job := <-node.jobChan:
-			node.log.Debug().Msg("Execute job")
+			node.log.Debug().Msg("execute job")
 			job()
 		case <-timeoutChan:
 			break
@@ -715,35 +715,35 @@ func (node *defaultNode) Spin() {
 }
 
 func (node *defaultNode) Shutdown() {
-	node.log.Debug().Msg("Shutting node down")
+	node.log.Debug().Msg("shutting node down")
 	node.okMutex.Lock()
 	node.ok = false
 	node.okMutex.Unlock()
-	node.log.Debug().Msg("Shutdown subscribers")
+	node.log.Debug().Msg("shutdown subscribers")
 	for _, s := range node.subscribers {
 		s.Shutdown()
 	}
-	node.log.Debug().Msg("Shutdown subscribers...done")
-	node.log.Debug().Msg("Shutdown publishers")
+	node.log.Debug().Msg("shutdown subscribers...done")
+	node.log.Debug().Msg("shutdown publishers")
 	for _, p := range node.publishers {
 		p.Shutdown()
 	}
-	node.log.Debug().Msg("Shutdown publishers...done")
-	node.log.Debug().Msg("Shutdown servers")
+	node.log.Debug().Msg("shutdown publishers...done")
+	node.log.Debug().Msg("shutdown servers")
 	for _, s := range node.servers {
 		s.Shutdown()
 	}
-	node.log.Debug().Msg("Shutdown servers...done")
-	node.log.Debug().Msg("Wait all goroutines")
+	node.log.Debug().Msg("shutdown servers...done")
+	node.log.Debug().Msg("wait all goroutines")
 	node.waitGroup.Wait()
-	node.log.Debug().Msg("Wait all goroutines...Done")
-	node.log.Debug().Msg("Close XMLRPC listener")
+	node.log.Debug().Msg("wait all goroutines...done")
+	node.log.Debug().Msg("close XMLRPC listener")
 	node.xmlrpcListener.Close()
-	node.log.Debug().Msg("Close XMLRPC done")
-	node.log.Debug().Msg("Wait XMLRPC server shutdown")
+	node.log.Debug().Msg("close XMLRPC done")
+	node.log.Debug().Msg("wait XMLRPC server shutdown")
 	node.xmlrpcHandler.WaitForShutdown()
-	node.log.Debug().Msg("Wait XMLRPC server shutdown...Done")
-	node.log.Debug().Msg("Shutting node down completed")
+	node.log.Debug().Msg("wait XMLRPC server shutdown...done")
+	node.log.Debug().Msg("shutting node down completed")
 	return
 }
 

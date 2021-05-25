@@ -80,7 +80,7 @@ func (gh *clientGoalHandler) GetTerminalState() (uint8, error) {
 	}
 
 	if gh.stateMachine.state != Done {
-		gh.actionClient.logger.Warn().Stringer("state", gh.stateMachine.state).Msg("Asking for terminal state when we are in state")
+		gh.actionClient.logger.Warn().Stringer("state", gh.stateMachine.state).Msg("asking for terminal state when we are in state")
 	}
 
 	// implement get status
@@ -95,7 +95,7 @@ func (gh *clientGoalHandler) GetTerminalState() (uint8, error) {
 		return goalStatus, nil
 	}
 
-	gh.actionClient.logger.Warn().Uint8("state", goalStatus).Msg("Asking for terminal state when latest goal is in state")
+	gh.actionClient.logger.Warn().Uint8("state", goalStatus).Msg("asking for terminal state when latest goal is in state")
 	return uint8(9), nil
 }
 
@@ -214,7 +214,7 @@ func (gh *clientGoalHandler) updateStatus(statusArr ActionStatusArray) error {
 			state != WaitingForResult &&
 			state != Done {
 
-			gh.logger.Warn().Str("actionGoalID", gh.actionGoalID).Msg("Transitioning goal with actionGoalID to `Lost`")
+			gh.logger.Warn().Str("actionGoalID", gh.actionGoalID).Msg("transitioning goal with actionGoalID to `Lost`")
 			gh.stateMachine.setAsLost()
 			gh.stateMachine.transitionTo(Done, gh, gh.transitionCb)
 		}

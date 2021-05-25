@@ -117,7 +117,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 	ctx, cancel := goContext.WithCancel(goContext.Background())
 	defer cancel()
 
-	log.Debug().Str("topic", sub.topic).Msg("Subscriber goroutine for topic started.")
+	log.Debug().Str("topic", sub.topic).Msg("subscriber goroutine for topic started")
 
 	wg.Add(1)
 	defer wg.Done()
@@ -160,7 +160,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			if requestTopicCancel != nil {
 				requestTopicCancel()
 			}
-			log.Debug().Str("topic", sub.topic).Msg("Receive pubListChan")
+			log.Debug().Str("topic", sub.topic).Msg("receive pubListChan")
 			deadPubs := setDifference(sub.pubList, list)
 			newPubs := setDifference(list, sub.pubList)
 			sub.pubList = setDifference(sub.pubList, deadPubs)
@@ -214,7 +214,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			startSubscription(subCtx, uri, log)
 
 		case uri := <-sub.disconnectedChan:
-			log.Debug().Str("uri", uri).Msg("Connection to uri was disconnected.")
+			log.Debug().Str("uri", uri).Msg("connection to uri was disconnected")
 			if pub, ok := uri2pubMap[uri]; ok {
 				if cancel, ok := cancelMap[pub]; ok {
 					cancel()
@@ -225,7 +225,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			}
 
 		case callback := <-sub.addCallbackChan:
-			log.Debug().Str("topic", sub.topic).Msg("Receive addCallbackChan")
+			log.Debug().Str("topic", sub.topic).Msg("receive addCallbackChan")
 			sub.callbacks = append(sub.callbacks, callback)
 
 		case msgEvent := <-sub.msgChan:
@@ -233,7 +233,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 				continue
 			}
 			// Pop received message then bind callbacks and enqueue to the job channel.
-			log.Debug().Str("topic", sub.topic).Msg("Receive msgChan")
+			log.Debug().Str("topic", sub.topic).Msg("receive msgChan")
 
 			callbacks := make([]interface{}, len(sub.callbacks))
 			copy(callbacks, sub.callbacks)
@@ -259,7 +259,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			activeJobChan = jobChan
 
 		case activeJobChan <- latestJob:
-			log.Debug().Str("topic", sub.topic).Msg("Callback job enqueued.")
+			log.Debug().Str("topic", sub.topic).Msg("callback job enqueued")
 			activeJobChan = nil
 			latestJob = func() {}
 

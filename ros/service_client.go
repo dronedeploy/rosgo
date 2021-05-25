@@ -75,7 +75,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", msgType})
 	headers = append(headers, header{"callerid", c.nodeID})
-	logger.Debug().Msg("TCPROS Connection Header")
+	logger.Debug().Msg("TCPROS connection header")
 	for _, h := range headers {
 		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
@@ -89,7 +89,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err != nil {
 		return err
 	}
-	logger.Debug().Msg("TCPROS Response Header:")
+	logger.Debug().Msg("TCPROS response header:")
 	resHeaderMap := make(map[string]string)
 	for _, h := range resHeaders {
 		resHeaderMap[h.key] = h.value
@@ -99,7 +99,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 		err = errors.New("incompatible message type")
 		return err
 	}
-	logger.Debug().Msg("Start receiving messages...")
+	logger.Debug().Msg("start receiving messages...")
 
 	// 3. Send request
 	var buf bytes.Buffer

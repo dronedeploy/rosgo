@@ -43,7 +43,7 @@ func newDefaultServiceServer(node *defaultNode, service string, srvType ServiceT
 		if tcpListener, ok := listener.(*net.TCPListener); ok {
 			server.listener = tcpListener
 		} else {
-			logger.Error().Msg("Server listener is not TCPListener")
+			logger.Error().Msg("server listener is not TCPListener")
 			return nil
 		}
 	}
@@ -68,7 +68,7 @@ func newDefaultServiceServer(node *defaultNode, service string, srvType ServiceT
 		server.rosrpcAddr,
 		node.xmlrpcURI)
 	if err != nil {
-		logger.Error().Str("service", service).Msg("Failed to register service")
+		logger.Error().Str("service", service).Msg("failed to register service")
 		server.listener.Close()
 		return nil
 	}
@@ -100,7 +100,7 @@ func (s *defaultServiceServer) start() {
 				return
 			}
 		} else {
-			logger.Debug().Str("address", conn.RemoteAddr().String()).Msg("Connected")
+			logger.Debug().Str("address", conn.RemoteAddr().String()).Msg("connected")
 			session := newRemoteClientSession(s, conn)
 			s.sessions.PushBack(session)
 			go session.start()
@@ -126,9 +126,9 @@ func (s *defaultServiceServer) start() {
 			_, err := callRosAPI(s.node.masterURI, "unregisterService",
 				s.node.qualifiedName, s.service, s.rosrpcAddr)
 			if err != nil {
-				logger.Warn().Str("service", s.service).Err(err).Msg("Failed unregisterService")
+				logger.Warn().Str("service", s.service).Err(err).Msg("failed unregisterService")
 			}
-			logger.Debug().Str("service", s.service).Msg("Called unregisterService")
+			logger.Debug().Str("service", s.service).Msg("called unregisterService")
 			for e := s.sessions.Front(); e != nil; e = e.Next() {
 				session := e.Value.(*remoteClientSession)
 				session.quitChan <- struct{}{}
@@ -204,7 +204,7 @@ func (s *remoteClientSession) start() {
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", srvType})
 	headers = append(headers, header{"callerid", nodeID})
-	logger.Debug().Msg("TCPROS Response Header")
+	logger.Debug().Msg("TCPROS response header")
 	for _, h := range headers {
 		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
@@ -215,17 +215,17 @@ func (s *remoteClientSession) start() {
 	}
 
 	if probe, ok := reqHeaderMap["probe"]; ok && probe == "1" {
-		logger.Debug().Msg("TCPROS header 'probe' detected. Session closed")
+		logger.Debug().Msg("TCPROS header 'probe' detected. session closed")
 		return
 	}
 	if reqHeaderMap["service"] != service ||
 		reqHeaderMap["md5sum"] != md5sum {
-		logger.Error().Msg("Incompatible message type!")
+		logger.Error().Msg("incompatible message type!")
 		return
 	}
 
 	// 3. Read request
-	logger.Debug().Msg("Reading message size...")
+	logger.Debug().Msg("reading message size...")
 	var msgSize uint32
 	conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 	if err := binary.Read(conn, binary.LittleEndian, &msgSize); err != nil {
@@ -233,7 +233,7 @@ func (s *remoteClientSession) start() {
 	}
 	logger.Debug().Uint32("message-size", msgSize).Msg("")
 	resBuffer := make([]byte, int(msgSize))
-	logger.Debug().Msg("Reading message body...")
+	logger.Debug().Msg("reading message body...")
 	conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 	if _, err = io.ReadFull(conn, resBuffer); err != nil {
 		panic(err)
@@ -251,18 +251,18 @@ func (s *remoteClientSession) start() {
 		results := fun.Call(args)
 
 		if len(results) != 1 {
-			logger.Debug().Msg("Service callback return type must be 'error'")
+			logger.Debug().Msg("service callback return type must be 'error'")
 			s.errorChan <- err
 			return
 		}
 		result := results[0]
 		if result.IsNil() {
-			logger.Debug().Msg("Service callback success")
+			logger.Debug().Msg("service callback success")
 			var buf bytes.Buffer
 			_ = srv.ResMessage().Serialize(&buf)
 			s.responseChan <- buf.Bytes()
 		} else {
-			logger.Debug().Msg("Service callback failure")
+			logger.Debug().Msg("service callback failure")
 			if err, ok := result.Interface().(error); ok {
 				s.errorChan <- err
 			} else {

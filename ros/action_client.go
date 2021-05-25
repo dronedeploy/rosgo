@@ -279,9 +279,9 @@ func (ac *defaultActionClient) internalStatusCallback(statusArr interface{}, eve
 
 	if !ac.statusReceived {
 		ac.statusReceived = true
-		ac.logger.Debug().Msg("Recieved first status message from action server ")
+		ac.logger.Debug().Msg("recieved first status message from action server ")
 	} else if ac.callerID != event.PublisherName {
-		ac.logger.Debug().Str("callerID", ac.callerID).Str("pub", event.PublisherName).Msg("Previously received status from callerID, now from pub. Did the action server change")
+		ac.logger.Debug().Str("callerID", ac.callerID).Str("pub", event.PublisherName).Msg("previously received status from callerID, now from pub. did the action server change")
 	}
 
 	// Interface to status array conversion

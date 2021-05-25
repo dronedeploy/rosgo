@@ -64,7 +64,7 @@ func newDefaultPublisher(node *defaultNode,
 
 func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 	log := pub.node.log
-	log.Debug().Str("topic", pub.topic).Msg("Publisher goroutine for topic started.")
+	log.Debug().Str("topic", pub.topic).Msg("publisher goroutine for topic started")
 	wg.Add(1)
 	defer func() {
 		log.Debug().Msg("defaultPublisher.start exit")
@@ -83,7 +83,7 @@ func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 			}
 
 		case err := <-pub.listenerErrorChan:
-			log.Debug().Err(err).Msg("Listener closed unexpectedly")
+			log.Debug().Err(err).Msg("listener closed unexpectedly")
 			pub.listener.Close()
 			return
 
@@ -119,7 +119,7 @@ func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 
 func (pub *defaultPublisher) listenRemoteSubscriber() {
 	log := pub.node.log
-	log.Debug().Str("address", pub.listener.Addr().String()).Msg("Start listening")
+	log.Debug().Str("address", pub.listener.Addr().String()).Msg("start listening")
 	defer func() {
 		log.Debug().Msg("defaultPublisher.listenRemoteSubscriber exit")
 	}()
@@ -135,7 +135,7 @@ func (pub *defaultPublisher) listenRemoteSubscriber() {
 			return
 		}
 
-		log.Debug().Str("address", conn.RemoteAddr().String()).Msg("Connected")
+		log.Debug().Str("address", conn.RemoteAddr().String()).Msg("connected")
 		id := pub.sesssionIDCount
 		pub.sesssionIDCount++
 		session := newRemoteSubscriberSession(pub, id, conn)
@@ -274,7 +274,7 @@ func (session *remoteSubscriberSession) start() {
 		session.log.Error().Msg("failed to read connection header")
 		return
 	}
-	session.log.Debug().Msg("TCPROS Connection Header:")
+	session.log.Debug().Msg("TCPROS connection header:")
 	headerMap := make(map[string]string)
 	for _, h := range headers {
 		headerMap[h.key] = h.value
@@ -304,7 +304,7 @@ func (session *remoteSubscriberSession) start() {
 	resHeaders = append(resHeaders, header{"md5sum", session.md5sum})
 	resHeaders = append(resHeaders, header{"topic", session.topic})
 	resHeaders = append(resHeaders, header{"type", session.typeName})
-	session.log.Debug().Msg("TCPROS Response Header")
+	session.log.Debug().Msg("TCPROS response header")
 	for _, h := range resHeaders {
 		session.log.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
@@ -315,21 +315,21 @@ func (session *remoteSubscriberSession) start() {
 	}
 
 	// 3. Start sending message
-	session.log.Debug().Msg("Start sending messages...")
+	session.log.Debug().Msg("start sending messages...")
 	queueMaxSize := 100
 	queue := make(chan []byte, queueMaxSize)
 	for {
 		//session.log.Debug().Msg("session.remoteSubscriberSession")
 		select {
 		case msg := <-session.msgChan:
-			session.log.Debug().Msg("Receive msgChan")
+			session.log.Debug().Msg("receive msgChan")
 			if len(queue) == queueMaxSize {
 				<-queue
 			}
 			queue <- msg
 
 		case <-session.quitChan:
-			session.log.Debug().Msg("Receive quitChan")
+			session.log.Debug().Msg("receive quitChan")
 			return
 
 		case msg := <-queue:

@@ -206,7 +206,7 @@ func (as *defaultActionServer) internalCancelCallback(goalid interface{}, event 
 
 	goalFound := false
 	logger := as.node.Logger()
-	logger.Debug().Msg("Action server has received a new cancel request")
+	logger.Debug().Msg("action server has received a new cancel request")
 
 	goalIDType := NewActionGoalIDType()
 	goalID := goalIDType.(*DynamicActionGoalIDType).NewGoalIDMessageFromInterface(goalid).(*DynamicActionGoalID)
@@ -275,7 +275,7 @@ func (as *defaultActionServer) internalGoalCallback(goals interface{}, event Mes
 				logger.Error().Err(err).Msg("failed to get goal status from goal handler")
 				return err
 			}
-			logger.Debug().Str("id", goalID.GetID()).Uint8("status", st.GetStatus()).Msg("Goal was already in the status list with status")
+			logger.Debug().Str("id", goalID.GetID()).Uint8("status", st.GetStatus()).Msg("goal was already in the status list with status")
 			if st.GetStatus() == uint8(7) {
 				st.SetStatus(uint8(8))
 				result := as.actionResultType.NewMessage()
