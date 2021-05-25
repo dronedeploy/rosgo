@@ -714,7 +714,7 @@ func makeTestSubscriberWithJobCallback(callback interface{}) *defaultSubscriber 
 
 // makeTestLogger creates a module logger for testing.
 func makeTestLogger() logging.Log {
-	log := logging.Root().With().Logger().Level(logging.ErrorLevel)
+	log := logging.Root().With().Logger().Level(logging.ConvertLevelToZerologLevel(logging.ErrorLevel))
 	return log
 }
 

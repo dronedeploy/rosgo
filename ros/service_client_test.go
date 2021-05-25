@@ -399,7 +399,7 @@ func doSendResponse(t *testing.T, conn net.Conn) {
 
 // setupServiceServer establishes all init values
 func setupServiceServerAndClient(t *testing.T) (net.Listener, net.Conn, *defaultServiceClient, chan error) {
-	logger := logging.Root().With().Logger().Level(logging.WarnLevel)
+	logger := logging.Root().With().Logger().Level(logging.ConvertLevelToZerologLevel(logging.WarnLevel))
 
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
