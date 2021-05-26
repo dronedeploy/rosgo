@@ -197,6 +197,8 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stvp/assert v0.0.0-20170616060220-4bc16443988b/go.mod h1:CC7OXV9IjEZRA+znA6/Kz5vbSwh69QioernOHeDCatU=
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
+github.com/team-rocos/go-common v1.1.7 h1:2nivFXI1pM8qUxZFMswiUW3UtHpn1kQmiwgpTMRfVns=
+github.com/team-rocos/go-common v1.1.7/go.mod h1:H2q1WT/YfXJVMa9TsuQdxNEFZookrzkP6qaxCTSc4ME=
 github.com/team-rocos/goja_nodejs v0.0.0-20201008035244-550b2dfd2ead/go.mod h1:v80ZS/fq2rCxYT9z/1hJXEBASxgwGa4ZRBhok2b1QnE=
 github.com/team-rocos/viper v1.7.1-0.20200721235605-36a9974d772e/go.mod h1:oIbVBLTWAroW5XNo6bcDvM2lS8dA4+gzn1wVxm5k7Hk=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
