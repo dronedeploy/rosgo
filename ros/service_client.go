@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 const headerReadTimeout time.Duration = 1000 * time.Millisecond
@@ -20,14 +20,14 @@ const responseBaseTimeout time.Duration = 1000 * time.Millisecond
 const responseByteMultiplier time.Duration = time.Millisecond
 
 type defaultServiceClient struct {
-	logger    logging.Log
+	logger    zerolog.Logger
 	service   string
 	srvType   ServiceType
 	masterURI string
 	nodeID    string
 }
 
-func newDefaultServiceClient(log logging.Log, nodeID string, masterURI string, service string, srvType ServiceType) *defaultServiceClient {
+func newDefaultServiceClient(log zerolog.Logger, nodeID string, masterURI string, service string, srvType ServiceType) *defaultServiceClient {
 	client := new(defaultServiceClient)
 	client.logger = log
 	client.service = service

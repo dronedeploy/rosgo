@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 	"github.com/team-rocos/rosgo/xmlrpc"
 )
 
@@ -77,7 +77,7 @@ type defaultNode struct {
 	jobChan          chan func()
 	interruptChan    chan os.Signal
 	enableInterrupts bool
-	log              logging.Log
+	log              zerolog.Logger
 	ok               bool
 	okMutex          sync.RWMutex
 	waitGroup        sync.WaitGroup
@@ -115,7 +115,7 @@ func listenRandomPort(address string, trialLimit int) (net.Listener, error) {
 	return nil, fmt.Errorf("listenRandomPort exceeds trial limit")
 }
 
-func newDefaultNodeWithLogs(name string, log logging.Log, args []string) (*defaultNode, error) {
+func newDefaultNodeWithLogs(name string, log zerolog.Logger, args []string) (*defaultNode, error) {
 	node, err := newDefaultNode(name, args)
 	if err != nil {
 		log.Error().Err(err).Msg("could not instantiate newDefaultNode")
@@ -136,11 +136,11 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 		node.homeDir = homeDir
 	}
 
-	log := logging.Root().With().Logger().Level(logging.ConvertLevelToZerologLevel(logging.FatalLevel))
+	log := zerolog.New(os.Stdout).With().Logger().Level(zerolog.FatalLevel)
 	if value, ok := specials["__ll"]; ok {
 		val, err := strconv.ParseInt(value, 10, 32)
 		if err == nil {
-			log = log.Level(logging.ConvertFloat64ToZerologLevel(float64(val)))
+			log = log.Level(zerolog.Level(val))
 		}
 	}
 	node.log = log
@@ -783,7 +783,7 @@ func (node *defaultNode) DeleteParam(key string) error {
 	return err
 }
 
-func (node *defaultNode) Logger() logging.Log {
+func (node *defaultNode) Logger() zerolog.Logger {
 	return node.log
 }
 

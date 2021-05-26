@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 type simpleActionServer struct {
@@ -17,7 +17,7 @@ type simpleActionServer struct {
 	newGoal               bool
 	preemptRequest        bool
 	newGoalPreemptRequest bool
-	logger                logging.Log
+	logger                zerolog.Logger
 	goalCallback          interface{}
 	preemptCallback       interface{}
 	executeCb             interface{}

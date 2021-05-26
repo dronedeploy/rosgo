@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"net"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 // Fake Service types for testing.
@@ -399,7 +400,7 @@ func doSendResponse(t *testing.T, conn net.Conn) {
 
 // setupServiceServer establishes all init values
 func setupServiceServerAndClient(t *testing.T) (net.Listener, net.Conn, *defaultServiceClient, chan error) {
-	logger := logging.Root().With().Logger().Level(logging.ConvertLevelToZerologLevel(logging.WarnLevel))
+	logger := zerolog.New(os.Stdout).With().Logger().Level(zerolog.WarnLevel)
 
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {

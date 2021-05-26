@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 type clientGoalHandler struct {
@@ -14,7 +14,7 @@ type clientGoalHandler struct {
 	actionGoalID string
 	transitionCb interface{}
 	feedbackCb   interface{}
-	logger       logging.Log
+	logger       zerolog.Logger
 }
 
 func newClientGoalHandler(ac *defaultActionClient, ag ActionGoal, transitionCb, feedbackCb interface{}) (*clientGoalHandler, error) {

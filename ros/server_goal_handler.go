@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 	"sync"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 type serverGoalHandler struct {
@@ -14,7 +14,7 @@ type serverGoalHandler struct {
 	goal                   ActionGoal
 	handlerDestructionTime Time
 	handlerMutex           sync.RWMutex
-	logger                 logging.Log
+	logger                 zerolog.Logger
 }
 
 func newServerGoalHandlerWithGoal(as ActionServer, goal ActionGoal) (*serverGoalHandler, error) {

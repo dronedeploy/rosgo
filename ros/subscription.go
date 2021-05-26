@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 // defaultSubscription connects to a publisher and runs a go routine to maintain its connection and packetize messages from the tcp stream. Messages are passed through the messageChan channel.
@@ -52,17 +52,17 @@ const (
 )
 
 // start spawns a go routine which connects a subscription to a publisher.
-func (s *defaultSubscription) start(log logging.Log) {
+func (s *defaultSubscription) start(log zerolog.Logger) {
 	go s.run(goContext.Background(), log) // TODO Remove this function, rename the other to start
 }
 
 // start spawns a go routine which connects a subscription to a publisher.
-func (s *defaultSubscription) startWithContext(ctx goContext.Context, log logging.Log) {
+func (s *defaultSubscription) startWithContext(ctx goContext.Context, log zerolog.Logger) {
 	go s.run(ctx, log)
 }
 
 // run connects to a publisher and attempts to maintain a connection until either a stop is requested or the publisher disconnects.
-func (s *defaultSubscription) run(ctx goContext.Context, log logging.Log) {
+func (s *defaultSubscription) run(ctx goContext.Context, log zerolog.Logger) {
 
 	logger := log
 	logger.Debug().Str("topic", s.topic).Msg("defaultSubscription.run() has started")
@@ -113,7 +113,7 @@ func (s *defaultSubscription) run(ctx goContext.Context, log logging.Log) {
 }
 
 // connectToPublisher estabilishes a TCPROS connection with a publishing node by exchanging headers to ensure both nodes are using the same message type.
-func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *net.Conn, log logging.Log) bool {
+func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *net.Conn, log zerolog.Logger) bool {
 	var err error
 
 	logger := log
@@ -179,7 +179,7 @@ func (s *defaultSubscription) connectToPublisher(ctx goContext.Context, conn *ne
 	return true
 }
 
-func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn, log logging.Log, subscriberHeaders []header) (err error) {
+func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn, log zerolog.Logger, subscriberHeaders []header) (err error) {
 	logger := log
 	logger.Debug().Interface("sub-headers", subscriberHeaders).Msg("writing TCPROS connection header")
 
@@ -204,7 +204,7 @@ func (s *defaultSubscription) writeHeader(ctx goContext.Context, conn *net.Conn,
 	}
 }
 
-func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, log logging.Log) (resHeaderMap map[string]string, err error) {
+func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, log zerolog.Logger) (resHeaderMap map[string]string, err error) {
 	logger := log
 
 	// Read a TCPROS message.
@@ -243,7 +243,7 @@ func (s *defaultSubscription) readHeader(ctx goContext.Context, conn *net.Conn, 
 }
 
 // readFromPublisher maintains a connection with a publisher. When a connection is stable, it will loop until either the publisher or subscriber disconnects.
-func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log logging.Log) readResult {
+func (s *defaultSubscription) readFromPublisher(ctx goContext.Context, conn net.Conn, log zerolog.Logger) readResult {
 	logger := log
 
 	// TCPROS reader setup.

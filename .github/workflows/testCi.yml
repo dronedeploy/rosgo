@@ -21,9 +21,7 @@ jobs:
 
     - name: Go get
       run: |
-        go env
-        go clean -x -cache -modcache
-        go get -d ./...
+        go get -v -u ./...
 
     - name: Test
       run: |

@@ -4,11 +4,12 @@ import (
 	goContext "context"
 	"io"
 	"net"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 
 	gengo "github.com/team-rocos/rosgo/libgengo"
 )
@@ -137,7 +138,7 @@ func TestSubscriber_Run_Shutdown(t *testing.T) {
 	jobChan := make(chan func())
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 	log := makeTestLogger()
 
 	shutdownSubscriber := make(chan struct{})
@@ -177,7 +178,7 @@ func TestSubscriber_Run_FlowControl(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
@@ -234,7 +235,7 @@ func TestSubscriber_Run_JobPackaging(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
@@ -284,7 +285,7 @@ func TestSubscriber_Run_JobCancellation(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	shutdownSubscriber := make(chan struct{})
 	go func() {
@@ -324,7 +325,7 @@ func TestSubscriber_Run_JobDisable(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
@@ -351,7 +352,7 @@ func TestSubscriber_Run_JobCallbacks(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
@@ -397,7 +398,7 @@ func TestSubscriber_Run_JobCallbacks_BadDeserialization(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
@@ -438,7 +439,7 @@ func TestSubscriber_Run_JobPrioritization(t *testing.T) {
 	enableChan := make(chan bool)
 	rosAPI := newFakeSubscriberRos()
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {}
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {}
 
 	go sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 	defer sub.Shutdown()
@@ -505,7 +506,7 @@ func TestSubscriber_Run_Publishers(t *testing.T) {
 	log := makeTestLogger()
 	pubURIs := []string{}
 	subscriptionContext := []goContext.Context{}
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {
 		pubURIs = append(pubURIs, pubURI)
 		subscriptionContext = append(subscriptionContext, ctx)
 	}
@@ -611,7 +612,7 @@ func TestSubscriber_Run_AddPublishersDontBlock(t *testing.T) {
 	rosAPI.uri = "fakeURI"
 	rosAPI.delay = 100 * time.Millisecond
 	log := makeTestLogger()
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {
 	}
 
 	shutdownSubscriber := make(chan struct{})
@@ -645,7 +646,7 @@ func TestSubscriber_Run_AddPublisherOverride(t *testing.T) {
 	rosAPI.delay = 50 * time.Millisecond
 	log := makeTestLogger()
 	subscriptionStartCount := 0
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {
 		subscriptionStartCount++
 	}
 
@@ -713,8 +714,8 @@ func makeTestSubscriberWithJobCallback(callback interface{}) *defaultSubscriber 
 }
 
 // makeTestLogger creates a module logger for testing.
-func makeTestLogger() logging.Log {
-	log := logging.Root().With().Logger().Level(logging.ConvertLevelToZerologLevel(logging.ErrorLevel))
+func makeTestLogger() zerolog.Logger {
+	log := zerolog.New(os.Stdout).With().Logger().Level(zerolog.ErrorLevel)
 	return log
 }
 

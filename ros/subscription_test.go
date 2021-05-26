@@ -6,10 +6,11 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 // Helper structs.
@@ -95,7 +96,7 @@ func TestSubscription_Dial_WithError(t *testing.T) {
 	}
 	subscription.dialer = testDialer
 
-	log := logging.Root().With().Logger()
+	log := zerolog.New(os.Stdout).With().Logger()
 
 	ctx := newFakeContext()
 	defer ctx.cleanUp()
@@ -128,7 +129,7 @@ func TestSubscription_Dial_CanCancel(t *testing.T) {
 
 	subscription := newTestSubscription(pubURI)
 
-	log := logging.Root().With().Logger()
+	log := zerolog.New(os.Stdout).With().Logger()
 
 	ctx := newFakeContext()
 	defer ctx.cleanUp()
@@ -511,7 +512,7 @@ func createAndConnectToSubscription(t *testing.T) (*fakeContext, net.Conn, *defa
 	subscription := newTestSubscription(pubURI)
 	subscription.dialer = testDialer
 
-	log := logging.Root().With().Logger()
+	log := zerolog.New(os.Stdout).With().Logger()
 
 	ctx := newFakeContext()
 	subscription.startWithContext(ctx, log)

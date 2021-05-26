@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -22,7 +22,7 @@ type simpleActionClient struct {
 	activeCb    interface{}
 	feedbackCb  interface{}
 	doneChan    chan struct{}
-	logger      logging.Log
+	logger      zerolog.Logger
 }
 
 func newSimpleActionClient(node Node, action string, actionType ActionType) (*simpleActionClient, error) {

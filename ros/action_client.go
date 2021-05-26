@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 type defaultActionClient struct {
@@ -22,7 +22,7 @@ type defaultActionClient struct {
 	resultSub        Subscriber
 	feedbackSub      Subscriber
 	statusSub        Subscriber
-	logger           logging.Log
+	logger           zerolog.Logger
 	handlers         []*clientGoalHandler
 	handlersMutex    sync.RWMutex
 	goalIDGen        *goalIDGenerator

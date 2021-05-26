@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 type remoteSubscriberSessionError struct {
@@ -193,7 +193,7 @@ type remoteSubscriberSession struct {
 	quitChan           chan struct{}
 	msgChan            chan []byte
 	errorChan          chan error
-	log                logging.Log
+	log                zerolog.Logger
 	connectCallback    func(SingleSubscriberPublisher)
 	disconnectCallback func(SingleSubscriberPublisher)
 }

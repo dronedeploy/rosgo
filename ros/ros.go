@@ -3,7 +3,7 @@ package ros
 import (
 	"time"
 
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 //Node interface which contains functions of a ROS Node
@@ -51,7 +51,7 @@ type Node interface {
 	GetPublishedTopics(subgraph string) (map[string]string, error)
 	GetTopicTypes() []interface{}
 
-	Logger() logging.Log
+	Logger() zerolog.Logger
 
 	NonRosArgs() []string
 	Name() string
@@ -63,7 +63,7 @@ func NewNode(name string, args []string) (Node, error) {
 }
 
 //NewNodeWithLogs instantiates a newDefaultNode with a provided log
-func NewNodeWithLogs(name string, log logging.Log, args []string) (Node, error) {
+func NewNodeWithLogs(name string, log zerolog.Logger, args []string) (Node, error) {
 	return newDefaultNodeWithLogs(name, log, args)
 }
 

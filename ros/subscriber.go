@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/team-rocos/go-common/logging"
+	"github.com/rs/zerolog"
 )
 
 type messageEvent struct {
@@ -83,7 +83,7 @@ type requestTopicResult struct {
 }
 
 // startPublisherSubscription defines a function interface for starting a subscription.
-type startPublisherSubscription func(ctx goContext.Context, pubURI string, log logging.Log)
+type startPublisherSubscription func(ctx goContext.Context, pubURI string, log zerolog.Logger)
 
 // The subscriber object runs in own goroutine (start).
 type defaultSubscriber struct {
@@ -113,7 +113,7 @@ func newDefaultSubscriber(topic string, msgType MessageType, callback interface{
 	return sub
 }
 
-func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log logging.Log) {
+func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIURI string, masterURI string, jobChan chan func(), enableChan chan bool, log zerolog.Logger) {
 	ctx, cancel := goContext.WithCancel(goContext.Background())
 	defer cancel()
 
@@ -134,7 +134,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 	}
 
 	// Decouples the implementation details of starting a subscription from the run loop.
-	startSubscription := func(ctx goContext.Context, pubURI string, log logging.Log) {
+	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {
 		startRemotePublisherConn(ctx, &TCPRosNetDialer{}, pubURI, sub.topic, sub.msgType, nodeID, sub.msgChan, sub.disconnectedChan, log)
 	}
 
@@ -142,7 +142,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 	sub.run(ctx, jobChan, enableChan, rosAPI, startSubscription, log)
 }
 
-func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, startSubscription startPublisherSubscription, log logging.Log) {
+func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), enableChan chan bool, rosAPI SubscriberRos, startSubscription startPublisherSubscription, log zerolog.Logger) {
 	enabled := true
 	cancelMap := make(map[string]goContext.CancelFunc)
 	uri2pubMap := make(map[string]string)
@@ -287,7 +287,7 @@ func startRemotePublisherConn(ctx goContext.Context, dialer TCPRosDialer,
 	pubURI string, topic string, msgType MessageType, nodeID string,
 	msgChan chan messageEvent,
 	disconnectedChan chan string,
-	log logging.Log) {
+	log zerolog.Logger) {
 	sub := newDefaultSubscription(pubURI, topic, msgType, nodeID, msgChan, disconnectedChan)
 	sub.dialer = dialer
 	sub.startWithContext(ctx, log)
