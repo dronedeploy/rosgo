@@ -21,7 +21,7 @@ jobs:
 
     - name: Go get
       run: |
-        go get -v -u ./...
+        go get -d ./...
 
     - name: Test
       run: |
