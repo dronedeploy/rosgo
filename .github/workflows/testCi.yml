@@ -21,6 +21,7 @@ jobs:
 
     - name: Go get
       run: |
+        go env
         go get -d ./...
 
     - name: Test
