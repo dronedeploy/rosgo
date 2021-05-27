@@ -34,16 +34,16 @@ type defaultServiceServer struct {
 }
 
 func newDefaultServiceServer(node *defaultNode, service string, srvType ServiceType, handler interface{}) *defaultServiceServer {
-	logger := node.logger
+	logger := node.log
 	server := new(defaultServiceServer)
 	if listener, err := listenRandomPort(node.listenIP, 10); err != nil {
-		logger.Errorf("failed to listen to random port : %v", err)
+		logger.Error().Err(err).Msg("failed to listen to random port")
 		return nil
 	} else {
 		if tcpListener, ok := listener.(*net.TCPListener); ok {
 			server.listener = tcpListener
 		} else {
-			logger.Errorf("Server listener is not TCPListener")
+			logger.Error().Msg("server listener is not TCPListener")
 			return nil
 		}
 	}
@@ -57,18 +57,18 @@ func newDefaultServiceServer(node *defaultNode, service string, srvType ServiceT
 	_, port, err := net.SplitHostPort(server.listener.Addr().String())
 	if err != nil {
 		// Not reached
-		logger.Errorf("failed to split host port : %v", err)
+		logger.Error().Err(err).Msg("failed to split host port")
 		return nil
 	}
 	server.rosrpcAddr = fmt.Sprintf("rosrpc://%s:%s", node.hostname, port)
-	logger.Debugf("ServiceServer listen %s", server.rosrpcAddr)
+	logger.Debug().Str("address", server.rosrpcAddr).Msg("ServiceServer listen")
 	_, err = callRosAPI(node.masterURI, "registerService",
 		node.qualifiedName,
 		service,
 		server.rosrpcAddr,
 		node.xmlrpcURI)
 	if err != nil {
-		logger.Errorf("Failed to register service %s", service)
+		logger.Error().Str("service", service).Msg("failed to register service")
 		server.listener.Close()
 		return nil
 	}
@@ -82,25 +82,25 @@ func (s *defaultServiceServer) Shutdown() {
 
 // event loop
 func (s *defaultServiceServer) start() {
-	logger := s.node.logger
-	logger.Debugf("service server '%s' start listen %s.", s.service, s.listener.Addr().String())
+	logger := s.node.log
+	logger.Debug().Str("service", s.service).Str("address", s.listener.Addr().String()).Msg("service server start listening")
 	s.node.waitGroup.Add(1)
 	defer func() {
-		logger.Debug("defaultServiceServer.start exit")
+		logger.Debug().Msg("defaultServiceServer.start exit")
 		s.node.waitGroup.Done()
 	}()
 
 	for {
-		//logger.Debug("defaultServiceServer.start loop");
+		//logger.Debug().Msg("defaultServiceServer.start loop");
 		s.listener.SetDeadline(time.Now().Add(1 * time.Millisecond))
 		if conn, err := s.listener.Accept(); err != nil {
 			opError, ok := err.(*net.OpError)
 			if !ok || !opError.Timeout() {
-				logger.Debugf("s.listner.Accept() failed")
+				logger.Debug().Msg("s.listner.Accept() failed")
 				return
 			}
 		} else {
-			logger.Debugf("Connected from %s", conn.RemoteAddr().String())
+			logger.Debug().Str("address", conn.RemoteAddr().String()).Msg("connected")
 			session := newRemoteClientSession(s, conn)
 			s.sessions.PushBack(session)
 			go session.start()
@@ -110,31 +110,31 @@ func (s *defaultServiceServer) start() {
 		select {
 		case ev := <-s.sessionCloseChan:
 			if ev.err != nil {
-				logger.Errorf("session error: %v", ev.err)
+				logger.Error().Err(ev.err).Msg("session error")
 			}
 			for e := s.sessions.Front(); e != nil; e = e.Next() {
 				if e.Value == ev.session {
-					logger.Debugf("service session %v removed", e.Value)
+					logger.Debug().Interface("session", e.Value).Msg("service session removed")
 					s.sessions.Remove(e)
 					break
 				}
 			}
 		case <-s.shutdownChan:
-			logger.Debug("defaultServiceServer.start Receive shutdownChan")
+			logger.Debug().Msg("defaultServiceServer.start Receive shutdownChan")
 			s.listener.Close()
-			logger.Debug("defaultServiceServer.start closed listener")
+			logger.Debug().Msg("defaultServiceServer.start closed listener")
 			_, err := callRosAPI(s.node.masterURI, "unregisterService",
 				s.node.qualifiedName, s.service, s.rosrpcAddr)
 			if err != nil {
-				logger.Warnf("Failed unregisterService(%s): %v", s.service, err)
+				logger.Warn().Str("service", s.service).Err(err).Msg("failed unregisterService")
 			}
-			logger.Debugf("Called unregisterService(%s)", s.service)
+			logger.Debug().Str("service", s.service).Msg("called unregisterService")
 			for e := s.sessions.Front(); e != nil; e = e.Next() {
 				session := e.Value.(*remoteClientSession)
 				session.quitChan <- struct{}{}
 			}
 			s.sessions.Init() // Clear all sessions
-			logger.Debug("defaultServiceServer.start session cleared")
+			logger.Debug().Msg("defaultServiceServer.start session cleared")
 			return
 		case <-timeoutChan:
 			break
@@ -160,16 +160,16 @@ func newRemoteClientSession(s *defaultServiceServer, conn net.Conn) *remoteClien
 }
 
 func (s *remoteClientSession) start() {
-	logger := s.server.node.logger
+	logger := s.server.node.log
 	conn := s.conn
 	nodeID := s.server.node.qualifiedName
 	service := s.server.service
 	md5sum := s.server.srvType.MD5Sum()
 	srvType := s.server.srvType.Name()
 	var err error
-	logger.Debugf("remoteClientSession.start '%s'", s.server.service)
+	logger.Debug().Str("service", s.server.service).Msg("remoteClientSession.start")
 	defer func() {
-		logger.Debug("remoteClientSession.start exit")
+		logger.Debug().Msg("remoteClientSession.start exit")
 	}()
 	defer func() {
 		if err := recover(); err != nil {
@@ -189,13 +189,13 @@ func (s *remoteClientSession) start() {
 	conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 	reqHeader, err := readConnectionHeader(conn)
 	if err != nil {
-		logger.Errorf("failed to read connection header : %v", err)
+		logger.Error().Err(err).Msg("failed to read connection header")
 		return
 	}
 	reqHeaderMap := make(map[string]string)
 	for _, h := range reqHeader {
 		reqHeaderMap[h.key] = h.value
-		logger.Debugf("  `%s` = `%s`", h.key, h.value)
+		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 
 	// 2. Write response header
@@ -204,36 +204,36 @@ func (s *remoteClientSession) start() {
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", srvType})
 	headers = append(headers, header{"callerid", nodeID})
-	logger.Debug("TCPROS Response Header")
+	logger.Debug().Msg("TCPROS response header")
 	for _, h := range headers {
-		logger.Debugf("  `%s` = `%s`", h.key, h.value)
+		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 	conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 	if err := writeConnectionHeader(headers, conn); err != nil {
-		logger.Errorf("failed to write connection header : %v", err)
+		logger.Error().Err(err).Msg("failed to write connection header")
 		return
 	}
 
 	if probe, ok := reqHeaderMap["probe"]; ok && probe == "1" {
-		logger.Debug("TCPROS header 'probe' detected. Session closed")
+		logger.Debug().Msg("TCPROS header 'probe' detected. session closed")
 		return
 	}
 	if reqHeaderMap["service"] != service ||
 		reqHeaderMap["md5sum"] != md5sum {
-		logger.Error("Incompatible message type!")
+		logger.Error().Msg("incompatible message type!")
 		return
 	}
 
 	// 3. Read request
-	logger.Debug("Reading message size...")
+	logger.Debug().Msg("reading message size...")
 	var msgSize uint32
 	conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 	if err := binary.Read(conn, binary.LittleEndian, &msgSize); err != nil {
 		panic(err)
 	}
-	logger.Debugf("  %d", msgSize)
+	logger.Debug().Uint32("message-size", msgSize).Msg("")
 	resBuffer := make([]byte, int(msgSize))
-	logger.Debug("Reading message body...")
+	logger.Debug().Msg("reading message body...")
 	conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 	if _, err = io.ReadFull(conn, resBuffer); err != nil {
 		panic(err)
@@ -251,18 +251,18 @@ func (s *remoteClientSession) start() {
 		results := fun.Call(args)
 
 		if len(results) != 1 {
-			logger.Debug("Service callback return type must be 'error'")
+			logger.Debug().Msg("service callback return type must be 'error'")
 			s.errorChan <- err
 			return
 		}
 		result := results[0]
 		if result.IsNil() {
-			logger.Debug("Service callback success")
+			logger.Debug().Msg("service callback success")
 			var buf bytes.Buffer
 			_ = srv.ResMessage().Serialize(&buf)
 			s.responseChan <- buf.Bytes()
 		} else {
-			logger.Debug("Service callback failure")
+			logger.Debug().Msg("service callback failure")
 			if err, ok := result.Interface().(error); ok {
 				s.errorChan <- err
 			} else {
@@ -281,7 +281,7 @@ func (s *remoteClientSession) start() {
 			panic(err)
 		}
 		// 5. Write response
-		logger.Debug(len(resMsg))
+		logger.Debug().Int("response-size", len(resMsg)).Msg("")
 		size := uint32(len(resMsg))
 		conn.SetDeadline(time.Now().Add(10 * time.Millisecond))
 		if err := binary.Write(conn, binary.LittleEndian, size); err != nil {
@@ -292,7 +292,7 @@ func (s *remoteClientSession) start() {
 			panic(err)
 		}
 	case err := <-s.errorChan:
-		logger.Error(err)
+		logger.Error().Err(err).Msg("")
 		// 4. Write OK byte
 		var ok byte
 		conn.SetDeadline(time.Now().Add(10 * time.Millisecond))

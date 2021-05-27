@@ -6,11 +6,11 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
-	modular "github.com/edwinhayes/logrus-modular"
-	"github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
 )
 
 // Helper structs.
@@ -96,15 +96,14 @@ func TestSubscription_Dial_WithError(t *testing.T) {
 	}
 	subscription.dialer = testDialer
 
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
+	log := zerolog.New(os.Stdout).With().Logger()
 
 	ctx := newFakeContext()
 	defer ctx.cleanUp()
 
 	closed := make(chan struct{})
 	go func() {
-		subscription.run(ctx, &log)
+		subscription.run(ctx, log)
 		closed <- struct{}{}
 	}()
 
@@ -130,15 +129,14 @@ func TestSubscription_Dial_CanCancel(t *testing.T) {
 
 	subscription := newTestSubscription(pubURI)
 
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
+	log := zerolog.New(os.Stdout).With().Logger()
 
 	ctx := newFakeContext()
 	defer ctx.cleanUp()
 
 	closed := make(chan struct{})
 	go func() {
-		subscription.run(ctx, &log)
+		subscription.run(ctx, log)
 		closed <- struct{}{}
 	}()
 
@@ -514,11 +512,10 @@ func createAndConnectToSubscription(t *testing.T) (*fakeContext, net.Conn, *defa
 	subscription := newTestSubscription(pubURI)
 	subscription.dialer = testDialer
 
-	logger := modular.NewRootLogger(logrus.New())
-	log := logger.GetModuleLogger()
+	log := zerolog.New(os.Stdout).With().Logger()
 
 	ctx := newFakeContext()
-	subscription.startWithContext(ctx, &log)
+	subscription.startWithContext(ctx, log)
 
 	return ctx, pubConn, subscription
 }

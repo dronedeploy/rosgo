@@ -15,7 +15,7 @@ jobs:
     steps:
     - uses: actions/setup-go@v1
       with:
-        go-version: 1.15.x
+        go-version: 1.16.3
     - name: Checkout Project
       uses: actions/checkout@v1
 
@@ -23,7 +23,7 @@ jobs:
       run: |
         go get -v -u ./...
 
-    - name: Test 
+    - name: Test
       run: |
         cd ros
         go test -v ./...

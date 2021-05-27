@@ -5,7 +5,7 @@ import (
 	"hash/fnv"
 	"sync"
 
-	modular "github.com/edwinhayes/logrus-modular"
+	"github.com/rs/zerolog"
 )
 
 type serverGoalHandler struct {
@@ -14,7 +14,7 @@ type serverGoalHandler struct {
 	goal                   ActionGoal
 	handlerDestructionTime Time
 	handlerMutex           sync.RWMutex
-	logger                 *modular.ModuleLogger
+	logger                 zerolog.Logger
 }
 
 func newServerGoalHandlerWithGoal(as ActionServer, goal ActionGoal) (*serverGoalHandler, error) {
@@ -119,15 +119,14 @@ func (gh *serverGoalHandler) SetAborted(result Message, text string) error {
 }
 
 func (gh *serverGoalHandler) SetSucceeded(result Message, text string) error {
-	logger := *gh.logger
+	logger := gh.logger
 	if gh.goal == nil {
 		return fmt.Errorf("attempt to set handler on an uninitialized handler handler")
 	}
 
 	status, err := gh.sm.transition(Succeed, text)
 	if err != nil {
-		logger.Errorf("to transition to an Succeeded state, the goal must be in a pending"+
-			"or recalling state, it is currently in state: %d", status.GetStatus())
+		logger.Error().Uint8("state", status.GetStatus()).Msg("to transition to an Succeeded state, the goal must be in a pending or recalling state, it is currently in state")
 		return err
 	}
 

@@ -109,16 +109,16 @@ func (as *defaultActionServer) initialize() error {
 }
 
 func (as *defaultActionServer) Start() {
-	logger := *as.node.Logger()
+	logger := as.node.Logger()
 	defer func() {
-		logger.Debug("defaultActionServer.start exit")
+		logger.Debug().Msg("defaultActionServer.start exit")
 		as.started = false
 	}()
 
 	// initialize subscribers and publishers
 	err := as.initialize()
 	if err != nil {
-		logger.Errorf("failed to initialize action server: %s", err)
+		logger.Error().Err(err).Msg("failed to initialize action server")
 	}
 
 	// start status publish ticker that notifies at 5hz
@@ -137,7 +137,7 @@ func (as *defaultActionServer) Start() {
 		case <-as.statusPubChan:
 			arr, err := as.getStatus()
 			if err != nil {
-				logger.Errorf("failed to get action server status: %v", err)
+				logger.Error().Err(err).Msg("failed to get action server status")
 			} else {
 				as.statusPub.Publish(arr)
 			}
@@ -205,8 +205,8 @@ func (as *defaultActionServer) internalCancelCallback(goalid interface{}, event 
 	defer as.handlersMutex.Unlock()
 
 	goalFound := false
-	logger := *as.node.Logger()
-	logger.Debug("Action server has received a new cancel request")
+	logger := as.node.Logger()
+	logger.Debug().Msg("action server has received a new cancel request")
 
 	goalIDType := NewActionGoalIDType()
 	goalID := goalIDType.(*DynamicActionGoalIDType).NewGoalIDMessageFromInterface(goalid).(*DynamicActionGoalID)
@@ -218,7 +218,7 @@ func (as *defaultActionServer) internalCancelCallback(goalid interface{}, event 
 
 		st, err := gh.GetGoalStatus()
 		if err != nil {
-			logger.Errorf("unable to get goal status from goal handler, err: %v", err)
+			logger.Error().Err(err).Msg("unable to get goal status from goal handler")
 			continue
 		}
 		statusStamp := st.GetGoalID().GetStamp()
@@ -259,7 +259,7 @@ func (as *defaultActionServer) internalGoalCallback(goals interface{}, event Mes
 	as.handlersMutex.Lock()
 	defer as.handlersMutex.Unlock()
 
-	logger := *as.node.Logger()
+	logger := as.node.Logger()
 
 	// Convert interface to Message
 	goal := as.actionType.GoalType().(*DynamicActionGoalType).NewGoalMessageFromInterface(goals).(*DynamicActionGoal)
@@ -272,10 +272,10 @@ func (as *defaultActionServer) internalGoalCallback(goals interface{}, event Mes
 		if goalID.GetID() == id {
 			st, err := gh.GetGoalStatus()
 			if err != nil {
-				logger.Errorf("failed to get goal status from goal handler, err: %v", err)
+				logger.Error().Err(err).Msg("failed to get goal status from goal handler")
 				return err
 			}
-			logger.Debugf("Goal %s was already in the status list with status %+v", goalID.GetID(), st.GetStatus())
+			logger.Debug().Str("id", goalID.GetID()).Uint8("status", st.GetStatus()).Msg("goal was already in the status list with status")
 			if st.GetStatus() == uint8(7) {
 				st.SetStatus(uint8(8))
 				result := as.actionResultType.NewMessage()

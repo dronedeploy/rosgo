@@ -3,7 +3,7 @@ package ros
 import (
 	"time"
 
-	modular "github.com/edwinhayes/logrus-modular"
+	"github.com/rs/zerolog"
 )
 
 //Node interface which contains functions of a ROS Node
@@ -51,7 +51,7 @@ type Node interface {
 	GetPublishedTopics(subgraph string) (map[string]string, error)
 	GetTopicTypes() []interface{}
 
-	Logger() *modular.ModuleLogger
+	Logger() zerolog.Logger
 
 	NonRosArgs() []string
 	Name() string
@@ -62,9 +62,9 @@ func NewNode(name string, args []string) (Node, error) {
 	return newDefaultNode(name, args)
 }
 
-//NewNodeWithLogs instantiates a newDefaultNode with a provided logger
-func NewNodeWithLogs(name string, logger *modular.ModuleLogger, args []string) (Node, error) {
-	return newDefaultNodeWithLogs(name, logger, args)
+//NewNodeWithLogs instantiates a newDefaultNode with a provided log
+func NewNodeWithLogs(name string, log zerolog.Logger, args []string) (Node, error) {
+	return newDefaultNodeWithLogs(name, log, args)
 }
 
 //Publisher is interface for publisher and shutdown function

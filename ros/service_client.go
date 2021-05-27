@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
-	modular "github.com/edwinhayes/logrus-modular"
+	"github.com/rs/zerolog"
 )
 
 const headerReadTimeout time.Duration = 1000 * time.Millisecond
@@ -21,14 +20,14 @@ const responseBaseTimeout time.Duration = 1000 * time.Millisecond
 const responseByteMultiplier time.Duration = time.Millisecond
 
 type defaultServiceClient struct {
-	logger    *modular.ModuleLogger
+	logger    zerolog.Logger
 	service   string
 	srvType   ServiceType
 	masterURI string
 	nodeID    string
 }
 
-func newDefaultServiceClient(log *modular.ModuleLogger, nodeID string, masterURI string, service string, srvType ServiceType) *defaultServiceClient {
+func newDefaultServiceClient(log zerolog.Logger, nodeID string, masterURI string, service string, srvType ServiceType) *defaultServiceClient {
 	client := new(defaultServiceClient)
 	client.logger = log
 	client.service = service
@@ -59,7 +58,7 @@ func (c *defaultServiceClient) Call(srv Service) error {
 }
 
 func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) error {
-	logger := *c.logger
+	logger := c.logger
 
 	var conn net.Conn
 	var err error
@@ -76,9 +75,9 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", msgType})
 	headers = append(headers, header{"callerid", c.nodeID})
-	logger.Debug("TCPROS Connection Header")
+	logger.Debug().Msg("TCPROS connection header")
 	for _, h := range headers {
-		logger.Debugf("  `%s` = `%s`", h.key, h.value)
+		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 	if err := writeConnectionHeader(headers, conn); err != nil {
 		return err
@@ -90,17 +89,17 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err != nil {
 		return err
 	}
-	logger.Debug("TCPROS Response Header:")
+	logger.Debug().Msg("TCPROS response header:")
 	resHeaderMap := make(map[string]string)
 	for _, h := range resHeaders {
 		resHeaderMap[h.key] = h.value
-		logger.Debugf("  `%s` = `%s`", h.key, h.value)
+		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 	if resHeaderMap["type"] != msgType || resHeaderMap["md5sum"] != md5sum {
 		err = errors.New("incompatible message type")
 		return err
 	}
-	logger.Debug("Start receiving messages...")
+	logger.Debug().Msg("start receiving messages...")
 
 	// 3. Send request
 	var buf bytes.Buffer
@@ -113,7 +112,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err := binary.Write(conn, binary.LittleEndian, size); err != nil {
 		return err
 	}
-	logger.Debugf("sent request, length: %d", size)
+	logger.Debug().Uint32("size", size).Msg("sent request with size")
 	if _, err := conn.Write(reqMsg); err != nil {
 		return err
 	}
@@ -145,7 +144,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err := binary.Read(conn, binary.LittleEndian, &msgSize); err != nil {
 		return err
 	}
-	logger.Debugf("Message Size:  %d", msgSize)
+	logger.Debug().Uint32("message-size", msgSize).Msg("")
 	resBuffer := make([]byte, int(msgSize))
 	conn.SetDeadline(time.Now().Add(responseBaseTimeout).Add(responseByteMultiplier * time.Duration(msgSize)))
 	if _, err = io.ReadFull(conn, resBuffer); err != nil {

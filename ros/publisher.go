@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	modular "github.com/edwinhayes/logrus-modular"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 )
 
 type remoteSubscriberSessionError struct {
@@ -63,18 +63,18 @@ func newDefaultPublisher(node *defaultNode,
 }
 
 func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
-	logger := pub.node.logger
-	logger.Debugf("Publisher goroutine for %s started.", pub.topic)
+	log := pub.node.log
+	log.Debug().Str("topic", pub.topic).Msg("publisher goroutine for topic started")
 	wg.Add(1)
 	defer func() {
-		logger.Debug("defaultPublisher.start exit")
+		log.Debug().Msg("defaultPublisher.start exit")
 		wg.Done()
 	}()
 
 	go pub.listenRemoteSubscriber()
 
 	for {
-		logger.Debug("defaultPublisher.start loop")
+		log.Debug().Msg("defaultPublisher.start loop")
 		select {
 		case msg := <-pub.msgChan:
 			for _, s := range pub.sessions {
@@ -83,7 +83,7 @@ func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 			}
 
 		case err := <-pub.listenerErrorChan:
-			logger.Debugf("Listener closed unexpectedly: %s", err)
+			log.Debug().Err(err).Msg("listener closed unexpectedly")
 			pub.listener.Close()
 			return
 
@@ -92,19 +92,19 @@ func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 			go s.start()
 
 		case err := <-pub.sessionErrorChan:
-			logger.Error(err)
+			log.Error().Err(err).Msg("")
 			if sessionError, ok := err.(*remoteSubscriberSessionError); ok {
 				id := sessionError.session.id
 				delete(pub.sessions, id)
 			}
 
 		case <-pub.shutdownChan:
-			logger.Debug("defaultPublisher.start Receive shutdownChan")
+			log.Debug().Msg("defaultPublisher.start Receive shutdownChan")
 			pub.listener.Close()
-			logger.Debug("defaultPublisher.start closed listener")
+			log.Debug().Msg("defaultPublisher.start closed listener")
 			_, err := callRosAPI(pub.node.masterURI, "unregisterPublisher", pub.node.qualifiedName, pub.topic, pub.node.xmlrpcURI)
 			if err != nil {
-				logger.Warn(err)
+				log.Warn().Err(err).Msg("")
 			}
 
 			for id, s := range pub.sessions {
@@ -118,24 +118,24 @@ func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 }
 
 func (pub *defaultPublisher) listenRemoteSubscriber() {
-	logger := pub.node.logger
-	logger.Debugf("Start listen %s.", pub.listener.Addr().String())
+	log := pub.node.log
+	log.Debug().Str("address", pub.listener.Addr().String()).Msg("start listening")
 	defer func() {
-		logger.Debug("defaultPublisher.listenRemoteSubscriber exit")
+		log.Debug().Msg("defaultPublisher.listenRemoteSubscriber exit")
 	}()
 
 	for {
-		logger.Debug("defaultPublisher.listenRemoteSubscriber loop")
+		log.Debug().Msg("defaultPublisher.listenRemoteSubscriber loop")
 		conn, err := pub.listener.Accept()
 		if err != nil {
-			logger.Debugf("pub.listner.Accept() failed")
+			log.Debug().Msg("pub.listner.Accept() failed")
 			pub.listenerErrorChan <- err
 			close(pub.listenerErrorChan)
-			logger.Debugf("defaultPublisher.listenRemoteSubscriber loop exit")
+			log.Debug().Msg("defaultPublisher.listenRemoteSubscriber loop exit")
 			return
 		}
 
-		logger.Debugf("Connected %s", conn.RemoteAddr().String())
+		log.Debug().Str("address", conn.RemoteAddr().String()).Msg("connected")
 		id := pub.sesssionIDCount
 		pub.sesssionIDCount++
 		session := newRemoteSubscriberSession(pub, id, conn)
@@ -172,7 +172,7 @@ func (pub *defaultPublisher) hostAndPort() (string, string, error) {
 	_, port, err := net.SplitHostPort(pub.listener.Addr().String())
 	if err != nil {
 		// Not reached
-		pub.node.logger.Error("failed to split host port")
+		pub.node.log.Error().Msg("failed to split host port")
 		return "", "", err
 	}
 	return pub.node.hostname, port, nil
@@ -193,7 +193,7 @@ type remoteSubscriberSession struct {
 	quitChan           chan struct{}
 	msgChan            chan []byte
 	errorChan          chan error
-	logger             *modular.ModuleLogger
+	log                zerolog.Logger
 	connectCallback    func(SingleSubscriberPublisher)
 	disconnectCallback func(SingleSubscriberPublisher)
 }
@@ -213,7 +213,7 @@ func newRemoteSubscriberSession(pub *defaultPublisher, id int, conn net.Conn) *r
 	session.quitChan = make(chan struct{})
 	session.msgChan = make(chan []byte, 10)
 	session.errorChan = pub.sessionErrorChan
-	session.logger = &pub.node.logger
+	session.log = pub.node.log
 	session.connectCallback = pub.connectCallback
 	session.disconnectCallback = pub.disconnectCallback
 	return session
@@ -240,8 +240,7 @@ func (ssp *singleSubPub) GetTopic() string {
 }
 
 func (session *remoteSubscriberSession) start() {
-	logger := *session.logger
-	logger.Debug("remoteSubscriberSession.start enter")
+	session.log.Debug().Msg("remoteSubscriberSession.start enter")
 
 	ssp := &singleSubPub{
 		topic:   session.topic,
@@ -250,7 +249,7 @@ func (session *remoteSubscriberSession) start() {
 	}
 
 	defer func() {
-		logger.Debug("remoteSubscriberSession.start exit")
+		session.log.Debug().Msg("remoteSubscriberSession.start exit")
 
 		if session.disconnectCallback != nil {
 			session.disconnectCallback(ssp)
@@ -272,25 +271,23 @@ func (session *remoteSubscriberSession) start() {
 	// 1. Read connection header
 	headers, err := readConnectionHeader(session.conn)
 	if err != nil {
-		logger.Error("failed to read connection header")
+		session.log.Error().Msg("failed to read connection header")
 		return
 	}
-	logger.Debug("TCPROS Connection Header:")
+	session.log.Debug().Msg("TCPROS connection header:")
 	headerMap := make(map[string]string)
 	for _, h := range headers {
 		headerMap[h.key] = h.value
-		logger.Debugf("  `%s` = `%s`", h.key, h.value)
+		session.log.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 
 	if headerMap["type"] != session.typeName && headerMap["type"] != "*" {
-		logger.Errorf("incompatible message type: does not match for topic %s: %s vs %s",
-			session.topic, session.typeName, headerMap["type"])
+		session.log.Error().Str("topic", session.topic).Str("session-type-name", session.typeName).Str("header-type", headerMap["type"]).Msg("incompatible message type: does not match for topic")
 		return
 	}
 
 	if headerMap["md5sum"] != session.md5sum && headerMap["md5sum"] != "*" {
-		logger.Errorf("incompatible message md5: does not match for topic %s: %s vs %s",
-			session.topic, session.md5sum, headerMap["md5sum"])
+		session.log.Error().Str("topic", session.topic).Str("session-md5", session.md5sum).Str("header-md5", headerMap["md5sum"]).Msg("incompatible message md5: does not match for topic")
 		return
 	}
 	session.callerID = headerMap["callerid"]
@@ -307,61 +304,59 @@ func (session *remoteSubscriberSession) start() {
 	resHeaders = append(resHeaders, header{"md5sum", session.md5sum})
 	resHeaders = append(resHeaders, header{"topic", session.topic})
 	resHeaders = append(resHeaders, header{"type", session.typeName})
-	logger.Debug("TCPROS Response Header")
+	session.log.Debug().Msg("TCPROS response header")
 	for _, h := range resHeaders {
-		logger.Debugf("  `%s` = `%s`", h.key, h.value)
+		session.log.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 	err = writeConnectionHeader(resHeaders, session.conn)
 	if err != nil {
-		logger.Error("failed to write response header")
+		session.log.Error().Msg("failed to write response header")
 		return
 	}
 
 	// 3. Start sending message
-	logger.Debug("Start sending messages...")
+	session.log.Debug().Msg("start sending messages...")
 	queueMaxSize := 100
 	queue := make(chan []byte, queueMaxSize)
 	for {
-		//logger.Debug("session.remoteSubscriberSession")
+		//session.log.Debug().Msg("session.remoteSubscriberSession")
 		select {
 		case msg := <-session.msgChan:
-			logger.Debug("Receive msgChan")
+			session.log.Debug().Msg("receive msgChan")
 			if len(queue) == queueMaxSize {
 				<-queue
 			}
 			queue <- msg
 
 		case <-session.quitChan:
-			logger.Debug("Receive quitChan")
+			session.log.Debug().Msg("receive quitChan")
 			return
 
 		case msg := <-queue:
-			logger.Debug("writing")
-			logger.Debug(hex.EncodeToString(msg))
+			session.log.Debug().Str("msg", hex.EncodeToString(msg)).Int("count", len(msg)).Msg("writing")
 			session.conn.SetDeadline(time.Now().Add(30 * time.Millisecond))
 			size := uint32(len(msg))
 			if err := binary.Write(session.conn, binary.LittleEndian, size); err != nil {
 				if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-					logger.Debug("timeout")
+					session.log.Debug().Msg("timeout")
 					// TODO : Make this trigger a faster reconnect
 					return
 				} else {
-					logger.Error(err)
+					session.log.Error().Err(err).Msg("")
 					return
 				}
 			}
-			logger.Debug(len(msg))
 			session.conn.SetDeadline(time.Now().Add(30 * time.Millisecond))
 			if _, err := session.conn.Write(msg); err != nil {
 				if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-					logger.Debug("timeout")
+					session.log.Debug().Msg("timeout")
 					return
 				} else {
-					logger.Error(err)
+					session.log.Error().Err(err).Msg("")
 					return
 				}
 			}
-			logger.Debug(hex.EncodeToString(msg))
+			session.log.Debug().Str("msg", hex.EncodeToString(msg)).Msg("finished writing")
 		}
 	}
 }
