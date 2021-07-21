@@ -99,7 +99,7 @@ func (t *DynamicMessageType) generateJSONSchemaProperties(topic string) (map[str
 						} else if field.GoType == "float32" || field.GoType == "float64" {
 							jsonType = "number"
 						} else if field.GoType == "bool" {
-							jsonType = "bool"
+							jsonType = "boolean"
 						} else {
 							// Something went wrong.
 							return nil, errors.New("we haven't implemented this primitive yet")
@@ -155,7 +155,7 @@ func (t *DynamicMessageType) generateJSONSchemaProperties(topic string) (map[str
 					} else if field.GoType == "float32" || field.GoType == "float64" {
 						jsonType = "number"
 					} else if field.GoType == "bool" {
-						jsonType = "bool"
+						jsonType = "boolean"
 					} else {
 						// Something went wrong.
 						return nil, errors.New("we haven't implemented this primitive yet")
