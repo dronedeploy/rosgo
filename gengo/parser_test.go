@@ -133,6 +133,9 @@ Bar[42] xfa
 }
 
 func TestMD5_std_msgs(t *testing.T) {
+	if os.Getenv("ROS_PACKAGE_PATH") == "" {
+		t.Skip("No ROS installation")
+	}
 	var std_msgs = map[string]string{
 		"std_msgs/Bool":                "8b94c1b53db61fb6aed406028ad6332a",
 		"std_msgs/Byte":                "ad736a2e8818154c487bb80fe42ce43b",
@@ -190,6 +193,9 @@ func TestMD5_std_msgs(t *testing.T) {
 }
 
 func TestMD5_sensor_msgs(t *testing.T) {
+	if os.Getenv("ROS_PACKAGE_PATH") == "" {
+		t.Skip("No ROS installation")
+	}
 	var sensor_msgs = map[string]string{
 		"sensor_msgs/BatteryState":       "4ddae7f048e32fda22cac764685e3974",
 		"sensor_msgs/CameraInfo":         "c9a58c1b0b154e0e6da7578cb991d214",

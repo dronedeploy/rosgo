@@ -1,19 +1,72 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
-- master
+  branches:
+    include:
+      - '*'
+  paths:
+    exclude:
+      - README.md
 
-pool:
-  vmImage: ubuntu-latest
+jobs:
+  - job: Build
+    pool:
+      vmImage: 'ubuntu-20.04'
 
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+    variables:
+      - name: GOPATH
+        value: '$(Agent.TempDirectory)/gopath'
+      - name: GOBIN
+        value: '$(GOPATH)/bin'
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+    steps:
+      - task: GoTool@0
+        displayName: 'Configure Go 1.16.3'
+        inputs:
+          version: '1.16.3'
+
+      - script: |
+          echo '##vso[task.prependpath]$(GOBIN)'
+          echo '##vso[task.prependpath]$(GOROOT)/bin'
+          echo '##vso[task.prependpath]$(GOPATH)/bin'
+          GITHUBTOKEN=$(githubToken)
+          git config --global url."https://${GITHUBTOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+        displayName: 'Set up the Go workspace'
+
+      - task: Go@0
+        displayName: 'Build project'
+        inputs:
+          command: 'build'
+          workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+
+      - script: |
+          echo "gobin: $GOBIN"
+          echo "gopath: $GOPATH"
+          echo "goroot: $GOROOT"
+          echo "path: $PATH"
+          go get -u github.com/axw/gocov/gocov
+          go get -u github.com/AlekSi/gocov-xml
+          go get -u github.com/jstemmer/go-junit-report
+          go mod tidy
+          go test -v -coverprofile=coverage.txt -covermode count ./ros ./libgengo ./gengo 2>&1 | go-junit-report > report.xml
+          if [ -f coverage.txt ]; then
+            gocov convert coverage.txt > coverage.json
+            gocov-xml < coverage.json > coverage.xml
+          fi
+        displayName: 'Run unit test'
+        workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+      - task: PublishTestResults@2
+        inputs:
+          testRunner: JUnit
+          testResultsFiles: 'report.xml' 
+          searchFolder: '$(System.DefaultWorkingDirectory)'
+          failTaskOnFailedTests: true
+        condition: always()
+
+      - task: PublishCodeCoverageResults@1
+        inputs:
+          codeCoverageTool: Cobertura
+          pathToSources: '$(System.DefaultWorkingDirectory)'
+          summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage.xml'
+          failIfCoverageEmpty: true
+        condition: always()
