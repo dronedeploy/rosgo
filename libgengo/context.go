@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -11,6 +12,10 @@ import (
 	"strings"
 	"sync"
 )
+
+type ROSPackage struct {
+	Name string `xml:"name"`
+}
 
 func isRosPackage(dir string) bool {
 	files, err := ioutil.ReadDir(dir)
@@ -44,21 +49,31 @@ func findPackages(pkgType string, rosPkgPaths []string) (map[string]string, erro
 		// Check whether this directory is a ROS package.
 		if isRosPackage(path) {
 			// It's a ROS package.
-			pkgName := filepath.Base(path)
-			pkgPath := filepath.Join(path, pkgType)
-			pkgPaths, err := filepath.Glob(pkgPath + fmt.Sprintf("/*.%s", pkgType))
-			if err != nil {
-				return nil
-			}
-			for _, p := range pkgPaths {
-				basename := filepath.Base(p)
-				rootname := basename[:len(basename)-(len(pkgType)+1)] // This is chopping off the file extension.  Horribly.
-				fullname := pkgName + "/" + rootname
-				pkgs[fullname] = p
-			}
+			packageDefinitionFile := filepath.Join(path, "package.xml")
+			if packageDefinitionData, err := os.ReadFile(packageDefinitionFile); err != nil {
+				return err
+			} else {
+				packageDefinition := ROSPackage{}
+				if err := xml.Unmarshal(packageDefinitionData, &packageDefinition); err != nil {
+					return err
+				} else {
+					pkgName := packageDefinition.Name
+					pkgPath := filepath.Join(path, pkgType)
+					pkgPaths, err := filepath.Glob(pkgPath + fmt.Sprintf("/*.%s", pkgType))
+					if err != nil {
+						return nil
+					}
+					for _, p := range pkgPaths {
+						basename := filepath.Base(p)
+						rootname := basename[:len(basename)-(len(pkgType)+1)] // This is chopping off the file extension.  Horribly.
+						fullname := pkgName + "/" + rootname
+						pkgs[fullname] = p
+					}
 
-			// No point checking INSIDE this one, since it's already a package.
-			return filepath.SkipDir
+					// No point checking INSIDE this one, since it's already a package.
+					return filepath.SkipDir
+				}
+			}
 		}
 
 		// Else just keep walking.
