@@ -62,7 +62,7 @@ func newDefaultServiceServer(node *defaultNode, service string, srvType ServiceT
 	}
 	server.rosrpcAddr = fmt.Sprintf("rosrpc://%s:%s", node.hostname, port)
 	logger.Debug().Str("address", server.rosrpcAddr).Msg("ServiceServer listen")
-	_, err = callRosAPI(node.masterURI, "registerService",
+	_, err = callRosAPI(node.xmlClient, node.masterURI, "registerService",
 		node.qualifiedName,
 		service,
 		server.rosrpcAddr,
@@ -123,7 +123,7 @@ func (s *defaultServiceServer) start() {
 			logger.Debug().Msg("defaultServiceServer.start Receive shutdownChan")
 			s.listener.Close()
 			logger.Debug().Msg("defaultServiceServer.start closed listener")
-			_, err := callRosAPI(s.node.masterURI, "unregisterService",
+			_, err := callRosAPI(s.node.xmlClient, s.node.masterURI, "unregisterService",
 				s.node.qualifiedName, s.service, s.rosrpcAddr)
 			if err != nil {
 				logger.Warn().Str("service", s.service).Err(err).Msg("failed unregisterService")

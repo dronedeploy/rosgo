@@ -34,6 +34,8 @@ const (
 	defaultInterrupts = true
 )
 
+const masterAPITimeout time.Duration = 1 * time.Second
+
 func processArguments(args []string) (NameMap, NameMap, NameMap, []string) {
 	mapping := make(NameMap)
 	params := make(NameMap)
@@ -68,6 +70,7 @@ type defaultNode struct {
 	xmlrpcURI        string
 	xmlrpcListener   net.Listener
 	xmlrpcHandler    *xmlrpc.Handler
+	xmlClient        *xmlrpc.XMLClient
 	subscribers      map[string]*defaultSubscriber
 	subscribersMutex sync.RWMutex
 	publishers       map[string]*defaultPublisher
@@ -231,9 +234,12 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 
 	log.Debug().Str("master-uri", node.masterURI).Msg("")
 
+	node.xmlClient = xmlrpc.NewXMLClient()
+	node.xmlClient.Timeout = masterAPITimeout
+
 	// Set parameters set by arguments
 	for k, v := range params {
-		_, err := callRosAPI(node.masterURI, "setParam", node.qualifiedName, k, v)
+		_, err := callRosAPI(node.xmlClient, node.masterURI, "setParam", node.qualifiedName, k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -429,7 +435,7 @@ func (node *defaultNode) NewPublisherWithCallbacks(topic string, msgType Message
 	name := node.nameResolver.remap(topic)
 	pub, ok := node.publishers[topic]
 	if !ok {
-		_, err := callRosAPI(node.masterURI, "registerPublisher",
+		_, err := callRosAPI(node.xmlClient, node.masterURI, "registerPublisher",
 			node.qualifiedName,
 			name, msgType.Name(),
 			node.xmlrpcURI)
@@ -448,7 +454,7 @@ func (node *defaultNode) NewPublisherWithCallbacks(topic string, msgType Message
 // Master API for getSystemState
 func (node *defaultNode) GetSystemState() ([]interface{}, error) {
 	node.log.Trace().Msg("call Master API getSystemState")
-	result, err := callRosAPI(node.masterURI, "getSystemState",
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "getSystemState",
 		node.qualifiedName)
 	if err != nil {
 		node.log.Error().Err(err).Msg("failed to call getSystemState()")
@@ -488,7 +494,7 @@ func (node *defaultNode) GetServiceType(serviceName string) (*ServiceHeader, err
 	serviceName = node.nameResolver.remap(serviceName)
 
 	// Probe the service
-	result, err := callRosAPI(node.masterURI, "lookupService", node.qualifiedName, serviceName)
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "lookupService", node.qualifiedName, serviceName)
 	if err != nil {
 		return nil, errors.Errorf("failed to lookup service %s : %s", serviceName, err)
 	}
@@ -545,7 +551,7 @@ func (node *defaultNode) GetServiceType(serviceName string) (*ServiceHeader, err
 // Master API call for getPublishedTopics
 func (node *defaultNode) GetPublishedTopics(subgraph string) (map[string]string, error) {
 	node.log.Trace().Msg("call Master API getPublishedTopics")
-	result, err := callRosAPI(node.masterURI, "getPublishedTopics",
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "getPublishedTopics",
 		node.qualifiedName,
 		subgraph)
 	if err != nil {
@@ -591,7 +597,7 @@ func (node *defaultNode) GetPublishedActions(subgraph string) (map[string]string
 // Master API call for getTopicTypes
 func (node *defaultNode) GetTopicTypes() []interface{} {
 	node.log.Trace().Msg("call Master API getTopicTypes")
-	result, err := callRosAPI(node.masterURI, "getTopicTypes",
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "getTopicTypes",
 		node.qualifiedName)
 	if err != nil {
 		node.log.Error().Err(err).Msg("failed to call getTopicTypes()")
@@ -626,7 +632,7 @@ func (node *defaultNode) NewSubscriberWithFlowControl(topic string, msgType Mess
 	sub, ok := node.subscribers[name]
 	if !ok {
 		node.log.Debug().Msg("call Master API registerSubscriber")
-		result, err := callRosAPI(node.masterURI, "registerSubscriber",
+		result, err := callRosAPI(node.xmlClient, node.masterURI, "registerSubscriber",
 			node.qualifiedName,
 			name,
 			msgType.Name(),
@@ -749,18 +755,18 @@ func (node *defaultNode) Shutdown() {
 
 func (node *defaultNode) GetParam(key string) (interface{}, error) {
 	name := node.nameResolver.remap(key)
-	return callRosAPI(node.masterURI, "getParam", node.qualifiedName, name)
+	return callRosAPI(node.xmlClient, node.masterURI, "getParam", node.qualifiedName, name)
 }
 
 func (node *defaultNode) SetParam(key string, value interface{}) error {
 	name := node.nameResolver.remap(key)
-	_, e := callRosAPI(node.masterURI, "setParam", node.qualifiedName, name, value)
+	_, e := callRosAPI(node.xmlClient, node.masterURI, "setParam", node.qualifiedName, name, value)
 	return e
 }
 
 func (node *defaultNode) HasParam(key string) (bool, error) {
 	name := node.nameResolver.remap(key)
-	result, err := callRosAPI(node.masterURI, "hasParam", node.qualifiedName, name)
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "hasParam", node.qualifiedName, name)
 	if err != nil {
 		return false, err
 	}
@@ -769,7 +775,7 @@ func (node *defaultNode) HasParam(key string) (bool, error) {
 }
 
 func (node *defaultNode) SearchParam(key string) (string, error) {
-	result, err := callRosAPI(node.masterURI, "searchParam", node.qualifiedName, key)
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "searchParam", node.qualifiedName, key)
 	if err != nil {
 		return "", err
 	}
@@ -779,7 +785,7 @@ func (node *defaultNode) SearchParam(key string) (string, error) {
 
 func (node *defaultNode) DeleteParam(key string) error {
 	name := node.nameResolver.remap(key)
-	_, err := callRosAPI(node.masterURI, "deleteParam", node.qualifiedName, name)
+	_, err := callRosAPI(node.xmlClient, node.masterURI, "deleteParam", node.qualifiedName, name)
 	return err
 }
 

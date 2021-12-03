@@ -102,7 +102,7 @@ func (pub *defaultPublisher) start(wg *sync.WaitGroup) {
 			log.Debug().Msg("defaultPublisher.start Receive shutdownChan")
 			pub.listener.Close()
 			log.Debug().Msg("defaultPublisher.start closed listener")
-			_, err := callRosAPI(pub.node.masterURI, "unregisterPublisher", pub.node.qualifiedName, pub.topic, pub.node.xmlrpcURI)
+			_, err := callRosAPI(pub.node.xmlClient, pub.node.masterURI, "unregisterPublisher", pub.node.qualifiedName, pub.topic, pub.node.xmlrpcURI)
 			if err != nil {
 				log.Warn().Err(err).Msg("")
 			}
