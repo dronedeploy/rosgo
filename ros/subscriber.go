@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	"github.com/team-rocos/rosgo/xmlrpc"
 )
 
 type messageEvent struct {
@@ -32,12 +33,13 @@ type SubscriberRosAPI struct {
 	nodeID     string
 	nodeAPIURI string
 	masterURI  string
+	xmlClient  *xmlrpc.XMLClient
 }
 
 // RequestTopicURI requests the URI of a given topic from a publisher.
 func (a *SubscriberRosAPI) RequestTopicURI(pub string) (string, error) {
 	protocols := []interface{}{[]interface{}{"TCPROS"}}
-	result, err := callRosAPI(pub, "requestTopic", a.nodeID, a.topic, protocols)
+	result, err := callRosAPI(a.xmlClient, pub, "requestTopic", a.nodeID, a.topic, protocols)
 
 	if err != nil {
 		return "", err
@@ -69,7 +71,7 @@ func (a *SubscriberRosAPI) RequestTopicURI(pub string) (string, error) {
 
 // Unregister removes a subscriber from a topic.
 func (a *SubscriberRosAPI) Unregister() error {
-	_, err := callRosAPI(a.masterURI, "unregisterSubscriber", a.nodeID, a.topic, a.nodeAPIURI)
+	_, err := callRosAPI(a.xmlClient, a.masterURI, "unregisterSubscriber", a.nodeID, a.topic, a.nodeAPIURI)
 	return err
 }
 
@@ -132,6 +134,8 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		masterURI:  masterURI,
 		nodeAPIURI: nodeAPIURI,
 	}
+	rosAPI.xmlClient = xmlrpc.NewXMLClient()
+	rosAPI.xmlClient.Timeout = masterAPITimeout
 
 	// Decouples the implementation details of starting a subscription from the run loop.
 	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {

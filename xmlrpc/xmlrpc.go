@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"time"
 
 	//	"io"
 	"net/http"
@@ -16,6 +17,21 @@ import (
 	"strings"
 	"sync"
 )
+
+const DefaultOperationTimeout time.Duration = 1 * time.Second
+
+type XMLClient struct {
+	http.Client
+}
+
+func NewXMLClient() *XMLClient {
+	client := &XMLClient{
+		Client: http.Client{
+			Timeout: DefaultOperationTimeout,
+		},
+	}
+	return client
+}
 
 func xmlEscape(s string) string {
 	var buffer bytes.Buffer
@@ -478,7 +494,8 @@ func parseResponse(d *xml.Decoder) (ok bool, result interface{}, e error) {
 // Call a XMLRPC API in a remote host.
 // Args:
 //   url string: URL of the remote host
-func Call(url string, method string, args ...interface{}) (res interface{}, e error) {
+func (client *XMLClient) Call(url string, method string, args ...interface{}) (res interface{}, e error) {
+
 	var buffer bytes.Buffer
 	e = emitRequest(&buffer, method, args...)
 	if e != nil {
@@ -486,7 +503,7 @@ func Call(url string, method string, args ...interface{}) (res interface{}, e er
 		return
 	}
 	var r *http.Response
-	r, e = http.Post(url, "text/xml", &buffer)
+	r, e = client.Post(url, "text/xml", &buffer)
 	if e != nil {
 		e = fmt.Errorf("Sending request failed for %v", e)
 		return
@@ -526,7 +543,6 @@ func Call(url string, method string, args ...interface{}) (res interface{}, e er
 		e = errors.New("Malformed XMLRPC Fault Response")
 		return
 	}
-	panic("Not reached")
 }
 
 //type Method func (args ...interface{}) (interface{}, error)

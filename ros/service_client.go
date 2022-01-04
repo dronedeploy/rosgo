@@ -11,6 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	"github.com/team-rocos/rosgo/xmlrpc"
 )
 
 const headerReadTimeout time.Duration = 1000 * time.Millisecond
@@ -25,6 +26,7 @@ type defaultServiceClient struct {
 	srvType   ServiceType
 	masterURI string
 	nodeID    string
+	xmlClient *xmlrpc.XMLClient
 }
 
 func newDefaultServiceClient(log zerolog.Logger, nodeID string, masterURI string, service string, srvType ServiceType) *defaultServiceClient {
@@ -34,12 +36,14 @@ func newDefaultServiceClient(log zerolog.Logger, nodeID string, masterURI string
 	client.srvType = srvType
 	client.masterURI = masterURI
 	client.nodeID = nodeID
+	client.xmlClient = xmlrpc.NewXMLClient()
+	client.xmlClient.Timeout = masterAPITimeout
 	return client
 }
 
 func (c *defaultServiceClient) Call(srv Service) error {
 
-	result, err := callRosAPI(c.masterURI, "lookupService", c.nodeID, c.service)
+	result, err := callRosAPI(c.xmlClient, c.masterURI, "lookupService", c.nodeID, c.service)
 	if err != nil {
 		return err
 	}

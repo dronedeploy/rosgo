@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestEmitNil(t *testing.T) {
@@ -626,33 +627,49 @@ func TestParseFault(t *testing.T) {
 	}
 }
 
-func TestClient(t *testing.T) {
+func TestClient_Normal(t *testing.T) {
 	masterURI := os.Getenv("ROS_MASTER_URI")
 	t.Log("Master URI: ", masterURI)
 
-	value, e := Call(masterURI, "getPublishedTopics", "not_a_node", "")
+	client := NewXMLClient()
+	client.Timeout = 1 * time.Second
+
+	value, e := client.Call(masterURI, "getPublishedTopics", "not_a_node", "")
 	if e != nil {
 		t.Error(e)
 	}
 	t.Log(value)
 
-	value, e = Call(masterURI, "getTopicTypes", "not_a_node")
+	value, e = client.Call(masterURI, "getTopicTypes", "not_a_node")
 	if e != nil {
 		t.Error(e)
 	}
 	t.Log(value)
 
-	value, e = Call(masterURI, "getSystemState", "not_a_node")
+	value, e = client.Call(masterURI, "getSystemState", "not_a_node")
 	if e != nil {
 		t.Error(e)
 	}
 	t.Log(value)
 
-	value, e = Call(masterURI, "getUri", "not_a_node")
+	value, e = client.Call(masterURI, "getUri", "not_a_node")
 	if e != nil {
 		t.Error(e)
 	}
 	t.Log(value)
+}
+
+func TestClient_Timeout(t *testing.T) {
+	masterURI := os.Getenv("ROS_MASTER_URI")
+	t.Log("Master URI: ", masterURI)
+
+	client := NewXMLClient()
+	client.Timeout = 1 * time.Nanosecond
+
+	_, e := client.Call(masterURI, "getPublishedTopics", "not_a_node", "")
+	if e == nil {
+		t.Error("expected Call to timeout")
+	}
 }
 
 type myDispatcher struct {
@@ -675,7 +692,10 @@ func TestServer(t *testing.T) {
 	handler := NewHandler(m)
 	go http.Serve(listener, handler)
 
-	result, e := Call("http://localhost:19937", "addTwoInts", 1, 2)
+	client := NewXMLClient()
+	client.Timeout = 1 * time.Second
+
+	result, e := client.Call("http://localhost:19937", "addTwoInts", 1, 2)
 	if e != nil {
 		t.Error(e)
 		return

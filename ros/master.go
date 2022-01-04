@@ -6,11 +6,9 @@ import (
 	"github.com/team-rocos/rosgo/xmlrpc"
 )
 
-//callRosApi performs an XML-RPC call to the ROS system. CalleeUri is the address to send the request
-//Method is the method to be called in the request. Args is an interface of values that are required
-//by the method call. Returns interface of the XML response from callee.
-func callRosAPI(calleeURI string, method string, args ...interface{}) (interface{}, error) {
-	result, err := xmlrpc.Call(calleeURI, method, args...)
+//callRosApi performs an XML-RPC call to the ROS system. calleeUri is the address to send the request, method is the method to be called in the request. args is an interface of values that are required by the method call. Returns interface of the XML response from callee.
+func callRosAPI(client *xmlrpc.XMLClient, calleeURI string, method string, args ...interface{}) (interface{}, error) {
+	result, err := client.Call(calleeURI, method, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +51,10 @@ func buildRosAPIResult(code int32, message string, value interface{}) interface{
 
 // PingMasterURI is intended to return true if a dial to the ros master URI returns successfully
 func PingMasterURI(calleeURI string) bool {
-	_, err := callRosAPI(calleeURI, "getUri", calleeURI)
+	xmlClient := xmlrpc.NewXMLClient()
+	xmlClient.Timeout = masterAPITimeout
+
+	_, err := callRosAPI(xmlClient, calleeURI, "getUri", calleeURI)
 	if err != nil {
 		return false
 	}
