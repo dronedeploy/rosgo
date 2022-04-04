@@ -1,6 +1,6 @@
 module github.com/team-rocos/rosgo
 
-go 1.16
+go 1.17
 
 require (
 	github.com/buger/jsonparser v0.0.0-20191004114745-ee4c978eae7e

@@ -540,7 +540,11 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 				if i > 0 {
 					*buf = append(*buf, byte(','))
 				}
-				*buf = strconv.AppendQuote(*buf, item)
+				encoded, err := json.Marshal(item)
+				if err != nil {
+					return err
+				}
+				*buf = append(*buf, encoded...)
 			}
 		case libgengo.Time:
 			slice, ok := v.([]Time)
@@ -664,7 +668,11 @@ func marshalSingularValue(field *libgengo.Field, v interface{}, buf *[]byte) err
 		if ok == false {
 			return newTypeError(v, "string")
 		}
-		*buf = strconv.AppendQuote(*buf, value)
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		*buf = append(*buf, encoded...)
 	case libgengo.Time:
 		value, ok := v.(Time)
 		if ok == false {
