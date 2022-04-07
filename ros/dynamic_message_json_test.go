@@ -467,6 +467,14 @@ func TestDynamicMessage_marshalJSON_strings(t *testing.T) {
 	}{
 		{
 			fields: []gengo.Field{*gengo.NewField("T", "string", "s", false, 0)},
+			data:   map[string]interface{}{"s": "hexidecimal non-printing character \x00 escape"},
+		},
+		{
+			fields: []gengo.Field{*gengo.NewField("T", "string", "s", true, 1)},
+			data:   map[string]interface{}{"s": []string{"hexidecimal non-printing character \x00 escape"}},
+		},
+		{
+			fields: []gengo.Field{*gengo.NewField("T", "string", "s", false, 0)},
 			data:   map[string]interface{}{"s": "new\nline"},
 		},
 		{
