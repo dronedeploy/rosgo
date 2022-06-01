@@ -34,7 +34,7 @@ const (
 	defaultInterrupts = true
 )
 
-const masterAPITimeout time.Duration = 1 * time.Second
+const defaultMasterAPITimeout time.Duration = 1 * time.Second
 
 func processArguments(args []string) (NameMap, NameMap, NameMap, []string) {
 	mapping := make(NameMap)
@@ -92,7 +92,7 @@ type defaultNode struct {
 	nonRosArgs       []string
 }
 
-// serviceheader is the header returned from probing a ros service, containing all type information
+// ServiceHeader is the header returned from probing a ros service, containing all type information
 type ServiceHeader struct {
 	Callerid     string
 	Md5sum       string
@@ -149,13 +149,13 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 	node.log = log
 
 	// Parse the name, since if it's an absolute name, then technically it actually contains the namespace also.
-	rawname := name
+	rawName := name
 	if value, ok := specials["__name"]; ok {
-		rawname = value
+		rawName = value
 	}
 	var namespace string
 	var err error
-	namespace, node.name, err = qualifyNodeName(rawname)
+	namespace, node.name, err = qualifyNodeName(rawName)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 	node.ok = true
 
 	// Install signal handler
-	if node.enableInterrupts == true {
+	if node.enableInterrupts {
 		signal.Notify(node.interruptChan, os.Interrupt)
 		go func() {
 			<-node.interruptChan
@@ -235,7 +235,12 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 	log.Debug().Str("master-uri", node.masterURI).Msg("")
 
 	node.xmlClient = xmlrpc.NewXMLClient()
-	node.xmlClient.Timeout = masterAPITimeout
+	node.xmlClient.Timeout = defaultMasterAPITimeout
+	if st, ok := specials["__masterapitimeout"]; ok {
+		if t, err := time.ParseDuration(st); err == nil {
+			node.xmlClient.Timeout = t
+		}
+	}
 
 	// Set parameters set by arguments
 	for k, v := range params {
@@ -320,7 +325,7 @@ func (node *defaultNode) getBusStats(callerID string) (interface{}, error) {
 }
 
 func (node *defaultNode) getBusInfo(callerID string) (interface{}, error) {
-	return buildRosAPIResult(-1, "Not implemeted", 0), nil
+	return buildRosAPIResult(-1, "Not implemented", 0), nil
 }
 
 func (node *defaultNode) getMasterURI(callerID string) (interface{}, error) {
@@ -523,7 +528,7 @@ func (node *defaultNode) GetServiceType(serviceName string) (*ServiceHeader, err
 	if err := writeConnectionHeader(headers, conn); err != nil {
 		return nil, err
 	}
-	// Read reponse header
+	// Read response header
 	conn.SetDeadline(time.Now().Add(50 * time.Millisecond))
 	resHeaders, err := readConnectionHeader(conn)
 	if err != nil {
@@ -534,7 +539,7 @@ func (node *defaultNode) GetServiceType(serviceName string) (*ServiceHeader, err
 	for _, h := range resHeaders {
 		resHeaderMap[h.key] = h.value
 	}
-	// Check whether the response was a succesful header
+	// Check whether the response was a successful header
 	if len(resHeaders) == 1 {
 		return nil, errors.Errorf("error probing service type: %s", resHeaders[0])
 	}
@@ -715,7 +720,6 @@ func (node *defaultNode) Spin() {
 			node.log.Debug().Msg("execute job")
 			job()
 		case <-timeoutChan:
-			break
 		}
 	}
 }
@@ -750,7 +754,6 @@ func (node *defaultNode) Shutdown() {
 	node.xmlrpcHandler.WaitForShutdown()
 	node.log.Debug().Msg("wait XMLRPC server shutdown...done")
 	node.log.Debug().Msg("shutting node down completed")
-	return
 }
 
 func (node *defaultNode) GetParam(key string) (interface{}, error) {

@@ -135,7 +135,7 @@ func (sub *defaultSubscriber) start(wg *sync.WaitGroup, nodeID string, nodeAPIUR
 		nodeAPIURI: nodeAPIURI,
 	}
 	rosAPI.xmlClient = xmlrpc.NewXMLClient()
-	rosAPI.xmlClient.Timeout = masterAPITimeout
+	rosAPI.xmlClient.Timeout = defaultMasterAPITimeout
 
 	// Decouples the implementation details of starting a subscription from the run loop.
 	startSubscription := func(ctx goContext.Context, pubURI string, log zerolog.Logger) {
