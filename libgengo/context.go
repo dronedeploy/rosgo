@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -227,7 +228,7 @@ func (ctx *PkgContext) LoadMsg(fullname string) (*MsgSpec, error) {
 				return spec, nil
 			}
 		} else {
-			return nil, fmt.Errorf("Message definition of `%s` is not found", fullname)
+			return nil, fmt.Errorf("message definition of `%s` is not found", fullname)
 		}
 	}
 }
@@ -238,9 +239,11 @@ func (ctx *PkgContext) LoadSrvFromString(text string, fullname string) (*SrvSpec
 		return nil, err
 	}
 
-	components := strings.Split(text, "---")
+	rex := regexp.MustCompile("[-]{3,}")
+	components := rex.Split(text, -1)
+	//components := strings.Split(text, "---")
 	if len(components) != 2 {
-		return nil, fmt.Errorf("Syntax error: missing '---'")
+		return nil, fmt.Errorf("syntax error: missing delimiter '---'")
 	}
 
 	reqText := components[0]
@@ -285,7 +288,7 @@ func (ctx *PkgContext) LoadSrv(fullname string) (*SrvSpec, error) {
 			return spec, nil
 		}
 	} else {
-		return nil, fmt.Errorf("Service definition of `%s` is not found", fullname)
+		return nil, fmt.Errorf("service definition of `%s` is not found", fullname)
 	}
 }
 
@@ -295,9 +298,11 @@ func (ctx *PkgContext) LoadActionFromString(text string, fullname string) (*Acti
 		return nil, err
 	}
 
-	components := strings.Split(text, "---")
+	rex := regexp.MustCompile("[-]{3,}")
+	components := rex.Split(text, -1)
+	//components := strings.Split(text, "---")
 	if len(components) != 3 {
-		return nil, fmt.Errorf("Syntax error: missing '---'")
+		return nil, fmt.Errorf("syntax error: missing delimiter(s) '---'")
 	}
 
 	goalText := components[0]
@@ -380,7 +385,7 @@ func (ctx *PkgContext) LoadAction(fullname string) (*ActionSpec, error) {
 				return spec, nil
 			}
 		} else {
-			return nil, fmt.Errorf("Action definition of `%s` is not found", fullname)
+			return nil, fmt.Errorf("action definition of `%s` is not found", fullname)
 		}
 	}
 }
