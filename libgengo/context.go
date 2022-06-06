@@ -241,7 +241,6 @@ func (ctx *PkgContext) LoadSrvFromString(text string, fullname string) (*SrvSpec
 
 	rex := regexp.MustCompile("[-]{3,}")
 	components := rex.Split(text, -1)
-	//components := strings.Split(text, "---")
 	if len(components) != 2 {
 		return nil, fmt.Errorf("syntax error: missing delimiter '---'")
 	}
@@ -300,7 +299,6 @@ func (ctx *PkgContext) LoadActionFromString(text string, fullname string) (*Acti
 
 	rex := regexp.MustCompile("[-]{3,}")
 	components := rex.Split(text, -1)
-	//components := strings.Split(text, "---")
 	if len(components) != 3 {
 		return nil, fmt.Errorf("syntax error: missing delimiter(s) '---'")
 	}
