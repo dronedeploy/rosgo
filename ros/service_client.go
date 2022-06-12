@@ -37,7 +37,7 @@ func newDefaultServiceClient(log zerolog.Logger, nodeID string, masterURI string
 	client.masterURI = masterURI
 	client.nodeID = nodeID
 	client.xmlClient = xmlrpc.NewXMLClient()
-	client.xmlClient.Timeout = masterAPITimeout
+	client.xmlClient.Timeout = defaultMasterAPITimeout
 	return client
 }
 

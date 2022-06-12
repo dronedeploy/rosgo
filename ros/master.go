@@ -52,7 +52,7 @@ func buildRosAPIResult(code int32, message string, value interface{}) interface{
 // PingMasterURI is intended to return true if a dial to the ros master URI returns successfully
 func PingMasterURI(calleeURI string) bool {
 	xmlClient := xmlrpc.NewXMLClient()
-	xmlClient.Timeout = masterAPITimeout
+	xmlClient.Timeout = defaultMasterAPITimeout
 
 	_, err := callRosAPI(xmlClient, calleeURI, "getUri", calleeURI)
 	if err != nil {
