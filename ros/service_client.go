@@ -42,15 +42,16 @@ func newDefaultServiceClient(log zerolog.Logger, nodeID string, masterURI string
 }
 
 func (c *defaultServiceClient) Call(srv Service) error {
-
+	c.logger.Debug().Str("service", c.service).Msg("calling service: looking up service URI...")
 	result, err := callRosAPI(c.xmlClient, c.masterURI, "lookupService", c.nodeID, c.service)
 	if err != nil {
 		return err
 	}
+	c.logger.Debug().Str("service", c.service).Str("uri", result.(string)).Msg("calling service: got service URI")
 
 	serviceRawURL, converted := result.(string)
 	if !converted {
-		return fmt.Errorf("Result of 'lookupService' is not a string")
+		return fmt.Errorf("result of 'lookupService' is not a string")
 	}
 	var serviceURL *url.URL
 	serviceURL, err = url.Parse(serviceRawURL)
@@ -62,8 +63,7 @@ func (c *defaultServiceClient) Call(srv Service) error {
 }
 
 func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) error {
-	logger := c.logger
-
+	c.logger.Debug().Str("service", c.service).Msg("dialling...")
 	var conn net.Conn
 	var err error
 	conn, err = net.Dial("tcp", serviceURI)
@@ -79,9 +79,9 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", msgType})
 	headers = append(headers, header{"callerid", c.nodeID})
-	logger.Debug().Msg("TCPROS connection header")
+	c.logger.Debug().Msg("TCPROS connection header")
 	for _, h := range headers {
-		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
+		c.logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 	if err := writeConnectionHeader(headers, conn); err != nil {
 		return err
@@ -93,17 +93,17 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err != nil {
 		return err
 	}
-	logger.Debug().Msg("TCPROS response header:")
+	c.logger.Debug().Msg("TCPROS response header:")
 	resHeaderMap := make(map[string]string)
 	for _, h := range resHeaders {
 		resHeaderMap[h.key] = h.value
-		logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
+		c.logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
 	if resHeaderMap["type"] != msgType || resHeaderMap["md5sum"] != md5sum {
 		err = errors.New("incompatible message type")
 		return err
 	}
-	logger.Debug().Msg("start receiving messages...")
+	c.logger.Debug().Msg("start receiving messages...")
 
 	// 3. Send request
 	var buf bytes.Buffer
@@ -116,7 +116,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err := binary.Write(conn, binary.LittleEndian, size); err != nil {
 		return err
 	}
-	logger.Debug().Uint32("size", size).Msg("sent request with size")
+	c.logger.Debug().Uint32("size", size).Msg("sent request with size")
 	if _, err := conn.Write(reqMsg); err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err := binary.Read(conn, binary.LittleEndian, &msgSize); err != nil {
 		return err
 	}
-	logger.Debug().Uint32("message-size", msgSize).Msg("")
+	c.logger.Debug().Uint32("message-size", msgSize).Msg("read response")
 	resBuffer := make([]byte, int(msgSize))
 	conn.SetDeadline(time.Now().Add(responseBaseTimeout).Add(responseByteMultiplier * time.Duration(msgSize)))
 	if _, err = io.ReadFull(conn, resBuffer); err != nil {
