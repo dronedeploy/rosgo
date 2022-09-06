@@ -77,7 +77,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", msgType})
 	headers = append(headers, header{"callerid", c.nodeID})
-	c.logger.Debug().Msg("calling service: TCPROS connection header")
+	c.logger.Debug()..Str("service", c.service).Msg("calling service: TCPROS connection header")
 	for _, h := range headers {
 		c.logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
@@ -91,7 +91,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err != nil {
 		return err
 	}
-	c.logger.Debug().Msg("calling service: TCPROS response header:")
+	c.logger.Debug().Str("service", c.service).Msg("calling service: TCPROS response header:")
 	resHeaderMap := make(map[string]string)
 	for _, h := range resHeaders {
 		resHeaderMap[h.key] = h.value
@@ -101,7 +101,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 		err = errors.New("incompatible message type")
 		return err
 	}
-	c.logger.Debug().Msg("calling service: start receiving messages...")
+	c.logger.Debug().Str("service", c.service).Msg("calling service: start receiving messages...")
 
 	// 3. Send request
 	var buf bytes.Buffer
@@ -114,7 +114,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err := binary.Write(conn, binary.LittleEndian, size); err != nil {
 		return err
 	}
-	c.logger.Debug().Uint32("size", size).Msg("calling service: sent request with size")
+	c.logger.Debug().Str("service", c.service).Uint32("size", size).Msg("calling service: sent request with size")
 	if _, err := conn.Write(reqMsg); err != nil {
 		return err
 	}
@@ -139,6 +139,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 		}
 		return errors.New(string(errMsg))
 	}
+	c.logger.Debug().Str("service", c.service).Msg("calling service: got ok byte")
 
 	// 5. Receive response
 	conn.SetDeadline(time.Now().Add(responseTimeout))
@@ -146,7 +147,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	if err := binary.Read(conn, binary.LittleEndian, &msgSize); err != nil {
 		return err
 	}
-	c.logger.Debug().Uint32("message-size", msgSize).Msg("calling service: read response")
+	c.logger.Debug().Str("service", c.service).Uint32("message-size", msgSize).Msg("calling service: read response")
 	resBuffer := make([]byte, int(msgSize))
 	conn.SetDeadline(time.Now().Add(responseBaseTimeout).Add(responseByteMultiplier * time.Duration(msgSize)))
 	if _, err = io.ReadFull(conn, resBuffer); err != nil {
