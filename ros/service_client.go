@@ -65,7 +65,7 @@ func (c *defaultServiceClient) Call(srv Service) error {
 func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) error {
 
 	c.logger.Debug().Str("service", c.service).Msg("resolving...")
-	host, port, err := net.SplitHostPort(serviceURI)
+	host, _, err := net.SplitHostPort(serviceURI)
 	if err != nil {
 		return err
 	}
