@@ -64,12 +64,12 @@ func (c *defaultServiceClient) Call(srv Service) error {
 
 func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) error {
 
-	c.logger.Debug().Str("service", c.service).Msg("resolving...")
-	host, _, err := net.SplitHostPort(serviceURI)
+	c.logger.Debug().Str("service", c.service).Str("uri", serviceURI).Msg("resolving...")
+	host, port, err := net.SplitHostPort(serviceURI)
 	if err != nil {
 		return err
 	}
-	addrs, err := net.LookupAddr(host)
+	addrs, err := net.LookupHost(host)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 
 	c.logger.Debug().Str("service", c.service).Str("address", addrs[0]).Msg("dialling...")
 	var conn net.Conn
-	conn, err = net.Dial("tcp", addrs[0])
+	conn, err = net.Dial("tcp", addrs[0]+":"+port)
 	if err != nil {
 		return err
 	}
