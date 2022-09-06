@@ -63,10 +63,19 @@ func (c *defaultServiceClient) Call(srv Service) error {
 }
 
 func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) error {
-	c.logger.Debug().Str("service", c.service).Msg("dialling...")
+
+	c.logger.Debug().Str("service", c.service).Msg("resolving...")
+	addrs, err := net.LookupAddr(serviceURI)
+	if err != nil {
+		return err
+	}
+	if len(addrs) <= 1 {
+		return errors.New("failed to resolve")
+	}
+
+	c.logger.Debug().Str("service", c.service).Str("address", addrs[0]).Msg("dialling...")
 	var conn net.Conn
-	var err error
-	conn, err = net.Dial("tcp", serviceURI)
+	conn, err = net.Dial("tcp", addrs[0])
 	if err != nil {
 		return err
 	}
