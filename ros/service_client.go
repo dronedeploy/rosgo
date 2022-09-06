@@ -77,7 +77,7 @@ func (c *defaultServiceClient) doServiceRequest(srv Service, serviceURI string) 
 	headers = append(headers, header{"md5sum", md5sum})
 	headers = append(headers, header{"type", msgType})
 	headers = append(headers, header{"callerid", c.nodeID})
-	c.logger.Debug()..Str("service", c.service).Msg("calling service: TCPROS connection header")
+	c.logger.Debug().Str("service", c.service).Msg("calling service: TCPROS connection header")
 	for _, h := range headers {
 		c.logger.Debug().Str("header", h.key).Str("value", h.value).Msg("")
 	}
