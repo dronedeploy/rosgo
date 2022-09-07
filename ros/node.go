@@ -756,6 +756,21 @@ func (node *defaultNode) Shutdown() {
 	node.log.Debug().Msg("shutting node down completed")
 }
 
+func (node *defaultNode) GetParamNames() ([]string, error) {
+	node.log.Trace().Msg("call Master API getParamNames")
+	result, err := callRosAPI(node.xmlClient, node.masterURI, "getParamNames", node.qualifiedName)
+	if err != nil {
+		node.log.Error().Err(err).Msg("failed to call getParamNames()")
+		return nil, err
+	}
+	list, ok := result.([]string)
+	if !ok {
+		node.log.Error().Str("type", reflect.TypeOf(result).String()).Msg("result is not []string")
+	}
+	node.log.Trace().Interface("result", list).Msg("response from getParamNames()")
+	return list, nil
+}
+
 func (node *defaultNode) GetParam(key string) (interface{}, error) {
 	name := node.nameResolver.remap(key)
 	return callRosAPI(node.xmlClient, node.masterURI, "getParam", node.qualifiedName, name)

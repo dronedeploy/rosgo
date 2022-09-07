@@ -38,6 +38,7 @@ type Node interface {
 	Namespace() string
 	QualifiedName() string
 
+	GetParamNames() ([]string, error)
 	GetParam(name string) (interface{}, error)
 	SetParam(name string, value interface{}) error
 	HasParam(name string) (bool, error)
