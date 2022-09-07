@@ -763,9 +763,18 @@ func (node *defaultNode) GetParamNames() ([]string, error) {
 		node.log.Error().Err(err).Msg("failed to call getParamNames()")
 		return nil, err
 	}
-	list, ok := result.([]string)
+	ilist, ok := result.([]interface{})
 	if !ok {
 		node.log.Error().Str("type", reflect.TypeOf(result).String()).Msg("result is not []string")
+	}
+	list := []string{}
+	for _, i := range ilist {
+		if s, ok := i.(string); !ok {
+			node.log.Error().Str("type", reflect.TypeOf(i).String()).Msg("result element is not string")
+			break
+		} else {
+			list = append(list, s)
+		}
 	}
 	node.log.Trace().Interface("result", list).Msg("response from getParamNames()")
 	return list, nil
