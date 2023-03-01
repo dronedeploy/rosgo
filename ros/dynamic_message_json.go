@@ -5,6 +5,7 @@ package ros
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"strconv"
@@ -121,7 +122,18 @@ func (t *DynamicMessageType) generateJSONSchemaProperties(topic string) (map[str
 					if err != nil {
 						return nil, errors.Wrap(err, "Schema Field:"+field.Name)
 					}
-					arrayItems["type"] = schemaElement
+
+					// Type must be present.
+					typeVal, ok := schemaElement["type"]
+					if !ok {
+						return nil, fmt.Errorf("missing type in returned schema element for field: %s", field.Name)
+					}
+					arrayItems["type"] = typeVal
+
+					// Properties can be present.
+					if propertiesVal, ok := schemaElement["properties"]; ok {
+						arrayItems["properties"] = propertiesVal
+					}
 				}
 			}
 		} else {
@@ -251,7 +263,7 @@ func (m *DynamicMessage) UnmarshalJSON(buf []byte) (err error) {
 				fieldExists = true
 			}
 		}
-		if fieldExists == false {
+		if !fieldExists {
 			return errors.New("Field Unknown: " + string(key))
 		}
 		switch dataType {
@@ -300,7 +312,7 @@ func (m *DynamicMessage) UnmarshalJSON(buf []byte) (err error) {
 			m.data[field.Name] = result
 
 		case jsonparser.Array:
-			if field.IsArray == false {
+			if !field.IsArray {
 				return errors.Wrap(errors.New("attempted to unmarshal singular as array"), "field: "+field.Name+" value: "+string(value))
 			}
 			var result interface{}
@@ -366,7 +378,7 @@ func marshalSecNSec(sec uint64, nsec uint64, buf *[]byte) {
 
 func marshalArrayUint8(v interface{}, buf *[]byte) error {
 	slice, ok := v.([]uint8)
-	if ok == false {
+	if !ok {
 		return newTypeError(v, "[]uint8")
 	}
 	*buf = append(*buf, byte('"'))
@@ -394,7 +406,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 	}
 
 	*buf = append(*buf, byte('['))
-	if field.IsBuiltin == false {
+	if !field.IsBuiltin {
 		// The type encapsulates an array of ROS messages, so we marshal the DynamicMessages.
 		if nestedArray, ok := v.([]Message); ok {
 			for i, nested := range nestedArray {
@@ -402,7 +414,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 					*buf = append(*buf, byte(','))
 				}
 				nestedDynamicMessage, ok := nested.(*DynamicMessage)
-				if ok == false {
+				if !ok {
 					return newTypeError(nested, "DynamicMessage")
 				}
 
@@ -419,14 +431,14 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 		switch field.BuiltInType {
 		case libgengo.Bool:
 			slice, ok := v.([]bool)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]bool")
 			}
 			for i, item := range slice {
 				if i > 0 {
 					*buf = append(*buf, byte(','))
 				}
-				if item == true {
+				if item {
 					*buf = append(*buf, []byte("true")...)
 				} else {
 					*buf = append(*buf, []byte("false")...)
@@ -434,7 +446,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Int8:
 			slice, ok := v.([]int8)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]int8")
 			}
 			for i, item := range slice {
@@ -445,7 +457,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Int16:
 			slice, ok := v.([]int16)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]int16")
 			}
 			for i, item := range slice {
@@ -456,7 +468,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Int32:
 			slice, ok := v.([]int32)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]int32")
 			}
 			for i, item := range slice {
@@ -467,7 +479,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Int64:
 			slice, ok := v.([]int64)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]int64")
 			}
 			for i, item := range slice {
@@ -478,7 +490,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Uint16:
 			slice, ok := v.([]uint16)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]uint16")
 			}
 			for i, item := range slice {
@@ -489,7 +501,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Uint32:
 			slice, ok := v.([]uint32)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]uint32")
 			}
 			for i, item := range slice {
@@ -500,7 +512,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Uint64:
 			slice, ok := v.([]uint64)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]uint64")
 			}
 			for i, item := range slice {
@@ -511,7 +523,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Float32:
 			slice, ok := v.([]JsonFloat32)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]JsonFloat32")
 			}
 			for i, item := range slice {
@@ -522,7 +534,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Float64:
 			slice, ok := v.([]JsonFloat64)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]JsonFloat64")
 			}
 			for i, item := range slice {
@@ -533,7 +545,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.String:
 			slice, ok := v.([]string)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]string")
 			}
 			for i, item := range slice {
@@ -548,7 +560,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Time:
 			slice, ok := v.([]Time)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]Time")
 			}
 			for i, item := range slice {
@@ -559,7 +571,7 @@ func marshalArrayValue(field *libgengo.Field, v interface{}, buf *[]byte) error 
 			}
 		case libgengo.Duration:
 			slice, ok := v.([]Duration)
-			if ok == false {
+			if !ok {
 				return newTypeError(v, "[]Duration")
 			}
 			for i, item := range slice {
@@ -595,7 +607,7 @@ func marshalSingularValue(field *libgengo.Field, v interface{}, buf *[]byte) err
 	switch field.BuiltInType {
 	case libgengo.Bool:
 		value, ok := v.(bool)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "int8")
 		}
 		if value {
@@ -605,67 +617,67 @@ func marshalSingularValue(field *libgengo.Field, v interface{}, buf *[]byte) err
 		}
 	case libgengo.Int8:
 		value, ok := v.(int8)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "int8")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Int16:
 		value, ok := v.(int16)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "int16")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Int32:
 		value, ok := v.(int32)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "int32")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Int64:
 		value, ok := v.(int64)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "int32")
 		}
 		*buf = strconv.AppendInt(*buf, value, 10)
 	case libgengo.Uint8:
 		value, ok := v.(uint8)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "uint8")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Uint16:
 		value, ok := v.(uint16)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "uint16")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Uint32:
 		value, ok := v.(uint32)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "uint32")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Uint64:
 		value, ok := v.(uint64)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "uint64")
 		}
 		*buf = strconv.AppendInt(*buf, int64(value), 10)
 	case libgengo.Float32:
 		value, ok := v.(JsonFloat32)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "JsonFloat32")
 		}
 		marshalFloat(float64(value.F), &*buf, 32)
 	case libgengo.Float64:
 		value, ok := v.(JsonFloat64)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "JsonFloat64")
 		}
 		marshalFloat(value.F, &*buf, 64)
 	case libgengo.String:
 		value, ok := v.(string)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "string")
 		}
 		encoded, err := json.Marshal(value)
@@ -675,13 +687,13 @@ func marshalSingularValue(field *libgengo.Field, v interface{}, buf *[]byte) err
 		*buf = append(*buf, encoded...)
 	case libgengo.Time:
 		value, ok := v.(Time)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "Time")
 		}
 		marshalSecNSec(uint64(value.Sec), uint64(value.NSec), &*buf)
 	case libgengo.Duration:
 		value, ok := v.(Duration)
-		if ok == false {
+		if !ok {
 			return newTypeError(v, "Duration")
 		}
 		marshalSecNSec(uint64(value.Sec), uint64(value.NSec), &*buf)

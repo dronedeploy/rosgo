@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	gengo "github.com/team-rocos/rosgo/libgengo"
 )
 
@@ -1616,4 +1617,61 @@ func TestDynamicMessage_marshalJSON_invalidPointers(t *testing.T) {
 		t.Fatal("expected error when unmarshalling nil spec fields")
 	}
 
+}
+
+func TestDynamicMessage_arrayOfNestedMessagesSchema(t *testing.T) {
+
+	var err error
+	context, err = gengo.NewPkgContext(nil)
+	require.NoError(t, err)
+
+	// Structure is z->[x, x].
+	fields := []gengo.Field{
+		*gengo.NewField("test", "uint8", "val", false, 0),
+	}
+	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "test/x0Message"
+
+	context.RegisterMsg("test/x0Message", msgSpec)
+
+	fields = []gengo.Field{
+		*gengo.NewField("test", "x0Message", "x", true, 2),
+	}
+	msgSpec = generateTestSpec(fields)
+	msgSpec.FullName = "test/z0Message"
+	context.RegisterMsg("test/z0Message", msgSpec)
+
+	testMessageType, err := NewDynamicMessageType("test/z0Message")
+	require.NoError(t, err)
+
+	schemaBytes, err := testMessageType.GenerateJSONSchema("/ros/", "testTopic")
+	require.NoError(t, err)
+
+	expectedSchema := `{"$id":"/ros/testTopic","$schema":"https://json-schema.org/draft-07/schema#","properties":{"x":{"items":{"properties":{"val":{"type":"integer"}},"type":"object"},"type":"array"}},"type":"object"}`
+	require.Equal(t, expectedSchema, string(schemaBytes))
+}
+
+func TestDynamicMessage_arrayOfFloat64Schema(t *testing.T) {
+
+	var err error
+	context, err = gengo.NewPkgContext(nil)
+	require.NoError(t, err)
+
+	// Structure is z->[x, x].
+	fields := []gengo.Field{
+		*gengo.NewField("Testing", "float64", "float64ArrayTest", true, -1),
+	}
+	msgSpec := generateTestSpec(fields)
+	msgSpec.FullName = "test/x0Message"
+
+	context.RegisterMsg("test/x0Message", msgSpec)
+
+	testMessageType, err := NewDynamicMessageType("test/x0Message")
+	require.NoError(t, err)
+
+	schemaBytes, err := testMessageType.GenerateJSONSchema("/ros/", "testTopic")
+	require.NoError(t, err)
+
+	expectedSchema := `{"$id":"/ros/testTopic","$schema":"https://json-schema.org/draft-07/schema#","properties":{"float64ArrayTest":{"items":{"type":"number"},"type":"array"}},"type":"object"}`
+	require.Equal(t, expectedSchema, string(schemaBytes))
 }

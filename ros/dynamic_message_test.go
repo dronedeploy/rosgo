@@ -51,12 +51,12 @@ func TestDynamicMessage_Deserialize_Simple(t *testing.T) {
 	}
 
 	xWrapped, ok := testMessage.data["x"]
-	if ok == false {
+	if !ok {
 		t.Fatalf("failed to deserialize x, got %s", testMessage.data)
 	}
 
 	x, ok := xWrapped.(JsonFloat32)
-	if ok == false {
+	if !ok {
 		t.Fatalf("x is not a float32, got %s", testMessage.data)
 	}
 
@@ -155,13 +155,13 @@ func TestDynamicMessage_DynamicType_LoadWithRepeatedFieldNames(t *testing.T) {
 	}
 
 	for expKey := range expectedKeys {
-		if _, ok := odomMessageType.nested[expKey]; ok == false {
+		if _, ok := odomMessageType.nested[expKey]; !ok {
 			t.Fatalf("key '%s' not found in nested type map", expKey)
 		}
 	}
 
 	for nestedKey := range odomMessageType.nested {
-		if _, ok := expectedKeys[nestedKey]; ok == false {
+		if _, ok := expectedKeys[nestedKey]; !ok {
 			t.Fatalf("unexpected key %s found in nested type map", nestedKey)
 		}
 	}
@@ -759,7 +759,7 @@ func TestDynamicMessage_getNestedTypeFromField_basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("did not find pkg/type, got error: %s", err)
 	}
-	if _, ok := nestedType.nested["found"]; ok == false {
+	if _, ok := nestedType.nested["found"]; !ok {
 		t.Fatalf("look up returned the incorrect nested type")
 	}
 }
