@@ -1621,11 +1621,12 @@ func TestDynamicMessage_marshalJSON_invalidPointers(t *testing.T) {
 
 func TestDynamicMessage_arrayOfNestedMessagesSchema(t *testing.T) {
 
+	// Confirms a schema bug is fixed - this was where a msg type with an array of objects would result in an invalid JSON schema.
+
 	var err error
 	context, err = gengo.NewPkgContext(nil)
 	require.NoError(t, err)
 
-	// Structure is z->[x, x].
 	fields := []gengo.Field{
 		*gengo.NewField("test", "uint8", "val", false, 0),
 	}
@@ -1657,7 +1658,6 @@ func TestDynamicMessage_arrayOfFloat64Schema(t *testing.T) {
 	context, err = gengo.NewPkgContext(nil)
 	require.NoError(t, err)
 
-	// Structure is z->[x, x].
 	fields := []gengo.Field{
 		*gengo.NewField("Testing", "float64", "float64ArrayTest", true, -1),
 	}
