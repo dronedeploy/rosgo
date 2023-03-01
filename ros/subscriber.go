@@ -56,12 +56,12 @@ func (a *SubscriberRosAPI) RequestTopicURI(pub string) (string, error) {
 	}
 
 	addr, ok := protocolParams[1].(string)
-	if ok == false {
+	if !ok {
 		return "", errors.New("failed to extract addr from requestTopic result")
 	}
 
 	port, ok := protocolParams[2].(int32)
-	if ok == false {
+	if !ok {
 		return "", errors.New("failed to extract port from requestTopic result")
 	}
 

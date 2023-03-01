@@ -19,7 +19,6 @@ type defaultActionServer struct {
 	actionResultType MessageType
 	actionFeedback   MessageType
 	actionGoal       MessageType
-	statusMutex      sync.RWMutex
 	statusFrequency  Rate
 	statusTimer      *time.Ticker
 	handlers         map[string]*serverGoalHandler

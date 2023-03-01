@@ -89,12 +89,12 @@ func TestReadConnectionHeader(t *testing.T) {
 
 func TestWriteConnectionHeader(t *testing.T) {
 	headers := []header{
-		header{"message_definition", "string data\n\n"},
-		header{"callerid", "/rostopic_4767_1316912741557"},
-		header{"latching", "1"},
-		header{"md5sum", "992ce8a1687cec8c8bd883ec73ca41d1"},
-		header{"topic", "/chatter"},
-		header{"type", "std_msgs/String"},
+		{"message_definition", "string data\n\n"},
+		{"callerid", "/rostopic_4767_1316912741557"},
+		{"latching", "1"},
+		{"md5sum", "992ce8a1687cec8c8bd883ec73ca41d1"},
+		{"topic", "/chatter"},
+		{"type", "std_msgs/String"},
 	}
 
 	var buffer bytes.Buffer

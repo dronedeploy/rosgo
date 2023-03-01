@@ -424,7 +424,7 @@ func TestSubscriber_Run_JobCallbacks_BadDeserialization(t *testing.T) {
 		t.Fatalf("expected to receive job")
 	}
 
-	if cbCalled == true {
+	if cbCalled {
 		t.Fatal("exected callback for invalid dynamic message")
 	}
 }

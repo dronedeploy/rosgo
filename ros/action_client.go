@@ -9,25 +9,24 @@ import (
 )
 
 type defaultActionClient struct {
-	started          bool
-	node             Node
-	action           string
-	actionType       ActionType
-	actionResult     MessageType
-	actionResultType MessageType
-	actionFeedback   MessageType
-	actionGoal       MessageType
-	goalPub          Publisher
-	cancelPub        Publisher
-	resultSub        Subscriber
-	feedbackSub      Subscriber
-	statusSub        Subscriber
-	logger           zerolog.Logger
-	handlers         []*clientGoalHandler
-	handlersMutex    sync.RWMutex
-	goalIDGen        *goalIDGenerator
-	statusReceived   bool
-	callerID         string
+	started        bool
+	node           Node
+	action         string
+	actionType     ActionType
+	actionResult   MessageType
+	actionFeedback MessageType
+	actionGoal     MessageType
+	goalPub        Publisher
+	cancelPub      Publisher
+	resultSub      Subscriber
+	feedbackSub    Subscriber
+	statusSub      Subscriber
+	logger         zerolog.Logger
+	handlers       []*clientGoalHandler
+	handlersMutex  sync.RWMutex
+	goalIDGen      *goalIDGenerator
+	statusReceived bool
+	callerID       string
 }
 
 func newDefaultActionClient(node Node, action string, actType ActionType) (*defaultActionClient, error) {

@@ -9,7 +9,7 @@ import (
 
 var service *ros.DynamicService
 
-//Callback function for ros service
+// Callback function for ros service
 func callback(srv ros.Service) error {
 	req := srv.ReqMessage().(*ros.DynamicMessage)
 	if req.Data()["data"] == true {
@@ -20,7 +20,7 @@ func callback(srv ros.Service) error {
 	return nil
 }
 
-//Go routine function to spin server node to be run in separate thread
+// Go routine function to spin server node to be run in separate thread
 func spinServer(node ros.Node, quit <-chan bool) {
 
 	//Initialize server - Server can keep using static service for now
@@ -37,8 +37,8 @@ func spinServer(node ros.Node, quit <-chan bool) {
 	}
 }
 
-//RTTest creates two separate nodes for a client and server. It makes these in separate threads so they can spin simultaneously
-//A service for add_two_ints is called and response is checked
+// RTTest creates two separate nodes for a client and server. It makes these in separate threads so they can spin simultaneously
+// A service for add_two_ints is called and response is checked
 func RTTest(t *testing.T) {
 	//func main() {
 	//Initialize nodes ; skip error tests
