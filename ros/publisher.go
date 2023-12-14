@@ -322,7 +322,7 @@ func (session *remoteSubscriberSession) start() {
 		//session.log.Debug().Msg("session.remoteSubscriberSession")
 		select {
 		case msg := <-session.msgChan:
-			session.log.Debug().Msg("receive msgChan")
+			session.log.Trace().Msg("receive msgChan")
 			if len(queue) == queueMaxSize {
 				<-queue
 			}

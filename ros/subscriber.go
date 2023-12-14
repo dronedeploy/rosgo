@@ -233,11 +233,11 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			sub.callbacks = append(sub.callbacks, callback)
 
 		case msgEvent := <-sub.msgChan:
-			if enabled == false {
+			if !enabled {
 				continue
 			}
 			// Pop received message then bind callbacks and enqueue to the job channel.
-			log.Debug().Str("topic", sub.topic).Msg("receive msgChan")
+			log.Trace().Str("topic", sub.topic).Msg("receive msgChan")
 
 			callbacks := make([]interface{}, len(sub.callbacks))
 			copy(callbacks, sub.callbacks)
@@ -263,7 +263,7 @@ func (sub *defaultSubscriber) run(ctx goContext.Context, jobChan chan func(), en
 			activeJobChan = jobChan
 
 		case activeJobChan <- latestJob:
-			log.Debug().Str("topic", sub.topic).Msg("callback job enqueued")
+			log.Trace().Str("topic", sub.topic).Msg("callback job enqueued")
 			activeJobChan = nil
 			latestJob = func() {}
 
