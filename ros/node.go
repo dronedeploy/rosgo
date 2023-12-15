@@ -717,7 +717,7 @@ func (node *defaultNode) Spin() {
 		timeoutChan := time.After(1000 * time.Millisecond)
 		select {
 		case job := <-node.jobChan:
-			node.log.Debug().Msg("execute job")
+			node.log.Trace().Msg("execute job")
 			job()
 		case <-timeoutChan:
 		}
