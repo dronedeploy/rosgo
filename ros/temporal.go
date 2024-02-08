@@ -12,8 +12,11 @@ func normalizeTemporal(sec int64, nsec int64) (uint32, uint32) {
 		nsec = nsec%SecondInNanosecond + SecondInNanosecond
 	}
 
-	if sec < 0 || sec > maxUint32 {
-		panic("Time is out of range")
+	if sec < 0 {
+		sec = 0
+	}
+	if sec > maxUint32 {
+		sec = maxUint32
 	}
 
 	return uint32(sec), uint32(nsec)
