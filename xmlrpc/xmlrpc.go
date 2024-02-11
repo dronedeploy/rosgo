@@ -175,13 +175,12 @@ func nextTag(d *xml.Decoder) (xml.StartElement, error) {
 			return elem, nil
 		}
 	}
-	panic("not reached")
 }
 
 func expectNextTag(d *xml.Decoder, name string) (xml.StartElement, error) {
-	tag, e := nextTag(d)
-	if e != nil {
-		return xml.StartElement{}, e
+	tag, err := nextTag(d)
+	if err != nil {
+		return xml.StartElement{}, err
 	}
 	if tag.Name.Local == name {
 		return tag, nil
@@ -493,7 +492,8 @@ func parseResponse(d *xml.Decoder) (ok bool, result interface{}, e error) {
 
 // Call a XMLRPC API in a remote host.
 // Args:
-//   url string: URL of the remote host
+//
+//	url string: URL of the remote host
 func (client *XMLClient) Call(url string, method string, args ...interface{}) (res interface{}, e error) {
 
 	var buffer bytes.Buffer
@@ -545,28 +545,24 @@ func (client *XMLClient) Call(url string, method string, args ...interface{}) (r
 	}
 }
 
-//type Method func (args ...interface{}) (interface{}, error)
+// type Method func (args ...interface{}) (interface{}, error)
 type Method interface{}
 
-//
 type Handler struct {
 	mapping map[string]Method
 	wait    sync.WaitGroup
 }
 
-//
 func NewHandler(mapping map[string]Method) *Handler {
 	handler := new(Handler)
 	handler.mapping = mapping
 	return handler
 }
 
-//
 func (self *Handler) WaitForShutdown() {
 	self.wait.Wait()
 }
 
-//
 func (self *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	self.wait.Add(1)
 	defer self.wait.Done()

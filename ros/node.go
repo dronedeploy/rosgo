@@ -3,7 +3,6 @@ package ros
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -101,21 +100,9 @@ type ServiceHeader struct {
 	ServiceType  string
 }
 
-func listenRandomPort(address string, trialLimit int) (net.Listener, error) {
-	var listener net.Listener
-	var err error
-	numTrial := 0
-	for numTrial < trialLimit {
-		port := 1024 + rand.Intn(65535-1024)
-		addr := fmt.Sprintf("%s:%d", address, port)
-		listener, err = net.Listen("tcp", addr)
-		if err == nil {
-			return listener, nil
-		}
-		numTrial++
-
-	}
-	return nil, fmt.Errorf("listenRandomPort exceeds trial limit")
+func listenRandomPort(address string) (net.Listener, error) {
+	addr := fmt.Sprintf("%s:0", address)
+	return net.Listen("tcp", addr)
 }
 
 func newDefaultNodeWithLogs(name string, log zerolog.Logger, args []string) (*defaultNode, error) {
@@ -250,7 +237,7 @@ func newDefaultNode(name string, args []string) (*defaultNode, error) {
 		}
 	}
 
-	listener, err := listenRandomPort(node.listenIP, 10)
+	listener, err := listenRandomPort(node.listenIP)
 	if err != nil {
 		log.Error().Err(err).Msg("")
 		return nil, err
@@ -438,21 +425,26 @@ func (node *defaultNode) NewPublisherWithCallbacks(topic string, msgType Message
 	defer node.publishersMutex.Unlock()
 
 	name := node.nameResolver.remap(topic)
-	pub, ok := node.publishers[topic]
-	if !ok {
-		_, err := callRosAPI(node.xmlClient, node.masterURI, "registerPublisher",
-			node.qualifiedName,
-			name, msgType.Name(),
-			node.xmlrpcURI)
-		if err != nil {
-			node.log.Error().Err(err).Msg("failed to call registerPublisher()")
-			return nil, err
-		}
-
-		pub = newDefaultPublisher(node, name, msgType, connectCallback, disconnectCallback)
-		node.publishers[name] = pub
-		go pub.start(&node.waitGroup)
+	if pub, ok := node.publishers[topic]; ok {
+		return pub, nil
 	}
+
+	_, err := callRosAPI(node.xmlClient, node.masterURI, "registerPublisher",
+		node.qualifiedName,
+		name, msgType.Name(),
+		node.xmlrpcURI)
+	if err != nil {
+		node.log.Error().Err(err).Msg("failed to call registerPublisher()")
+		return nil, err
+	}
+
+	pub, err := newDefaultPublisher(node, name, msgType, connectCallback, disconnectCallback)
+	if err != nil {
+		return nil, err
+	}
+	node.publishers[name] = pub
+	go pub.start(&node.waitGroup)
+
 	return pub, nil
 }
 
