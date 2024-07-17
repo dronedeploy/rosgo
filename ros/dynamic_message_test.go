@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	gengo "github.com/dronedeploy/rosgo/libgengo"
+	gengo "github.com/team-rocos/rosgo/libgengo"
 )
 
 func TestDynamicMessage_TypeGetters(t *testing.T) {

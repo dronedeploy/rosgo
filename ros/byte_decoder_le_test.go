@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	gengo "github.com/dronedeploy/rosgo/libgengo"
+	gengo "github.com/team-rocos/rosgo/libgengo"
 )
 
 func TestCheckSize(t *testing.T) {

@@ -4,7 +4,7 @@ package main
 import (
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libtest/libtest_publish_subscribe"
+	"github.com/team-rocos/rosgo/libtest/libtest_publish_subscribe"
 )
 
 func main() {

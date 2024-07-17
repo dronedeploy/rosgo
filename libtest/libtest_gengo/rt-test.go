@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libgengo"
+	"github.com/team-rocos/rosgo/libgengo"
 )
 
 const allMsgDefContent string = `

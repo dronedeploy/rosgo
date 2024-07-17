@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dronedeploy/rosgo/ros"
+	"github.com/team-rocos/rosgo/ros"
 )
 
 //RTTest creates a node and makes ros api calls to the ros parameter server

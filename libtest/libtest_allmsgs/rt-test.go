@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libgengo"
-	"github.com/dronedeploy/rosgo/ros"
+	"github.com/team-rocos/rosgo/libgengo"
+	"github.com/team-rocos/rosgo/ros"
 )
 
 //RTTest searches all ros message files on the ros environment (opt/ros + catkin)

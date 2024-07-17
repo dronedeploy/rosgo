@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dronedeploy/rosgo/ros"
+	"github.com/team-rocos/rosgo/ros"
 )
 
 var message string

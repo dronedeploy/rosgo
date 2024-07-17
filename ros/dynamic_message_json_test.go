@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	gengo "github.com/dronedeploy/rosgo/libgengo"
+	gengo "github.com/team-rocos/rosgo/libgengo"
 )
 
 func TestDynamicMessage_JSON_primitives(t *testing.T) {

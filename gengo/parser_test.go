@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libgengo"
+	"github.com/team-rocos/rosgo/libgengo"
 )
 
 func TestConvertConstantValue(t *testing.T) {
