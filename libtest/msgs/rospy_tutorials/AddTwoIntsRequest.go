@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/team-rocos/rosgo/ros"
+	"github.com/dronedeploy/rosgo/ros"
 )
 
 type _MsgAddTwoIntsRequest struct {

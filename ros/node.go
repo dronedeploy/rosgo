@@ -17,7 +17,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
-	"github.com/team-rocos/rosgo/xmlrpc"
+	"github.com/dronedeploy/rosgo/xmlrpc"
 )
 
 const (

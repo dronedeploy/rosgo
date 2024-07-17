@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/team-rocos/rosgo/libgengo"
+	"github.com/dronedeploy/rosgo/libgengo"
 )
 
 var (
