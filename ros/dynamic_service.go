@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/team-rocos/rosgo/libgengo"
+	"github.com/dronedeploy/rosgo/libgengo"
 )
 
 // DEFINE PUBLIC STRUCTURES.

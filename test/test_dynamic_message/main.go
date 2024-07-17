@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/team-rocos/rosgo/libtest/libtest_dynamic_message"
+	"github.com/dronedeploy/rosgo/libtest/libtest_dynamic_message"
 )
 
 func main() {

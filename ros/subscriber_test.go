@@ -11,7 +11,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	gengo "github.com/team-rocos/rosgo/libgengo"
+	gengo "github.com/dronedeploy/rosgo/libgengo"
 )
 
 // `subscriber_test.go` uses `testMessageType` and `testMessage` defined in `subscription_test.go`.

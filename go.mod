@@ -1,4 +1,4 @@
-module github.com/team-rocos/rosgo
+module github.com/dronedeploy/rosgo
 
 go 1.17
 

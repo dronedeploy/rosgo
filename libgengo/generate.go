@@ -15,12 +15,12 @@ import (
 {{- if .BinaryRequired }}
     "encoding/binary"
 {{- end }}
-    "github.com/team-rocos/rosgo/ros"
+    "github.com/dronedeploy/rosgo/ros"
 {{- range .Imports }}
 	"{{ . }}"
 {{- end }}
 
-    "github.com/team-rocos/rosgo/ros"
+    "github.com/dronedeploy/rosgo/ros"
 )
 
 {{- if gt (len .Constants) 0 }}
@@ -271,7 +271,7 @@ var srvTemplate = `
 // Package {{ .Package }} is automatically generated from the message definition "{{ .FullName }}.srv"
 package {{ .Package }}
 import (
-    "github.com/team-rocos/rosgo/ros"
+    "github.com/dronedeploy/rosgo/ros"
 )
 
 // Service type metadata
@@ -316,8 +316,8 @@ var actionTemplate = `
 // Automatically generated from the message definition "{{ .FullName }}.action"
 package {{ .Package }}
 import (
-    "github.com/team-rocos/rosgo/actionlib"
-    "github.com/team-rocos/rosgo/ros"
+    "github.com/dronedeploy/rosgo/actionlib"
+    "github.com/dronedeploy/rosgo/ros"
 )
 
 // Service type metadata

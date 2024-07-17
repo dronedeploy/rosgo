@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	gengo "github.com/team-rocos/rosgo/libgengo"
+	gengo "github.com/dronedeploy/rosgo/libgengo"
 )
 
 // Benchmarks on primitive ROS data types.
