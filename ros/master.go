@@ -3,7 +3,7 @@ package ros
 import (
 	"fmt"
 
-	"github.com/dronedeploy/rosgo/xmlrpc"
+	"github.com/team-rocos/rosgo/xmlrpc"
 )
 
 //callRosApi performs an XML-RPC call to the ROS system. calleeUri is the address to send the request, method is the method to be called in the request. args is an interface of values that are required by the method call. Returns interface of the XML response from callee.

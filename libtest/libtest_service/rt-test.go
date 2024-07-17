@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libtest/msgs/rospy_tutorials"
-	"github.com/dronedeploy/rosgo/ros"
+	"github.com/team-rocos/rosgo/libtest/msgs/rospy_tutorials"
+	"github.com/team-rocos/rosgo/ros"
 )
 
 var service rospy_tutorials.AddTwoInts

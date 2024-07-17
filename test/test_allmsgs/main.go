@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libtest/libtest_allmsgs"
+	"github.com/team-rocos/rosgo/libtest/libtest_allmsgs"
 )
 
 func main() {

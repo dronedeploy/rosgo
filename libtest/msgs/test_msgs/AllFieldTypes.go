@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/dronedeploy/rosgo/libtest/msgs/std_msgs"
-	"github.com/dronedeploy/rosgo/ros"
+	"github.com/team-rocos/rosgo/libtest/msgs/std_msgs"
+	"github.com/team-rocos/rosgo/ros"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dronedeploy/rosgo/libgengo"
+	"github.com/team-rocos/rosgo/libgengo"
 )
 
 func TestGenerateBadAction(t *testing.T) {
